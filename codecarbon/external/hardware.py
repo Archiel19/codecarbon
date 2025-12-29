@@ -46,7 +46,8 @@ class BaseHardware(ABC):
         energy = Energy.from_power_and_time(
             power=power, time=Time.from_seconds(last_duration)
         )
-        return power, energy
+        extra_data = self.extra_data()
+        return power, energy, extra_data
 
     def start(self) -> None:  # noqa B027
         pass
@@ -73,29 +74,28 @@ class GPU(BaseHardware):
     ) -> Tuple[Power, Energy]:
         if not gpu_ids:
             gpu_ids = self._get_gpu_ids()
-        all_gpu_details: List[Dict] = self.devices.get_delta(
+        gpu_deltas: List[Dict] = self.devices.get_delta(
             Time.from_seconds(last_duration)
         )
-        # We get the total energy and power of only the ones in gpu_ids
-        total_energy = Energy.from_energy(
-            sum(
-                [
-                    gpu_details["delta_energy_consumption"].kWh
-                    for idx, gpu_details in enumerate(all_gpu_details)
-                    if idx in gpu_ids
-                ]
-            )
-        )
-        self._total_power = Power(
-            sum(
-                [
-                    gpu_details["power_usage"].kW
-                    for idx, gpu_details in enumerate(all_gpu_details)
-                    if idx in gpu_ids
-                ]
-            )
-        )
-        return self._total_power, total_energy
+        all_gpu_details: List[Dict] = self.devices.get_gpu_details()
+        # We get the energy and power of only the ones in gpu_ids
+        per_gpu_energy, per_gpu_power = [], []
+        for idx, gpu_details in enumerate(gpu_deltas):
+            if idx in gpu_ids:
+                per_gpu_energy.append(Energy.from_energy(gpu_details["delta_energy_consumption"].kWh))
+                per_gpu_power.append(Power(gpu_details["power_usage"].kW))
+        extras = {
+            "gpu_utilization": [],
+            "used_memory": [],
+            "temperature": [],
+        }
+        for idx, gpu_details in enumerate(all_gpu_details):
+            if idx in gpu_ids:
+                for key in extras:
+                    extras[key].append(gpu_details[key])
+        extras['used_memory'] = [mem / B_TO_GB for mem in extras['used_memory']]
+        self._total_power = sum(per_gpu_power, start=Power(kW = 0))
+        return per_gpu_power, per_gpu_energy, extras
 
     def _get_gpu_ids(self) -> Iterable[int]:
         """
@@ -305,12 +305,24 @@ class CPU(BaseHardware):
         cpu_power = sum(power_history_in_W) / len(power_history_in_W)
         self._power_history = []
         return Power.from_watts(cpu_power)
+    
+    def extra_data(self) -> float: # Blatantly copied from _get_power_from_cpu_load
+        if self._tracking_mode == "machine":
+            cpu_load = psutil.cpu_percent(
+                interval=0.5, percpu=False
+            )  # Convert to 0-1 range
+        elif self._tracking_mode == "process":
+            cpu_load = self._process.cpu_percent(interval=0.5) / self._cpu_count
+        else:
+            raise Exception(f"Unknown tracking_mode {self._tracking_mode}")
+        return {"cpu_load": cpu_load}
 
     def measure_power_and_energy(self, last_duration: float) -> Tuple[Power, Energy]:
         if self._mode == "intel_rapl":
             energy = self._get_energy_from_cpus(delay=Time(seconds=last_duration))
             power = self.total_power()
-            return power, energy
+            extra_data = self.extra_data()
+            return power, energy, extra_data
         # If not intel_rapl, we call the parent method from BaseHardware
         # to compute energy from power and time
         return super().measure_power_and_energy(last_duration=last_duration)
@@ -352,6 +364,7 @@ class CPU(BaseHardware):
                 mode=mode,
                 model=model,
                 tdp=tdp,
+                tracking_mode=tracking_mode,
                 rapl_include_dram=rapl_include_dram,
                 rapl_prefer_psys=rapl_prefer_psys,
             )

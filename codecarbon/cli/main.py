@@ -2,6 +2,7 @@ import os
 import signal
 import sys
 import time
+import logging
 from pathlib import Path
 from typing import Optional
 
@@ -25,6 +26,7 @@ from codecarbon.cli.cli_utils import (
 from codecarbon.core.api_client import ApiClient, get_datetime_with_timezone
 from codecarbon.core.schemas import ExperimentCreate, OrganizationCreate, ProjectCreate
 from codecarbon.emissions_tracker import EmissionsTracker, OfflineEmissionsTracker
+from codecarbon.output import LoggerOutput
 
 AUTH_CLIENT_ID = os.environ.get(
     "AUTH_CLIENT_ID",
@@ -412,6 +414,91 @@ def monitor(
         tracker.stop()
         raise e
 
+
+@codecarbon.command("monitor_log", short_help="Monitor your machine's carbon emissions with extra logging.")
+def monitor_log(
+    experiment_name: Annotated[
+        str, typer.Argument(help="Experiment name")
+    ] = 'TEST',
+    output_dir: Annotated[
+        str, typer.Argument(help='Log output directory')
+    ] = '/home/marta/PhD/project1/EXPERIMENTS',
+    measure_power_secs: Annotated[
+        int, typer.Argument(help="Interval between two measures.")
+    ] = 15,
+    log_interval: Annotated[
+        int, typer.Argument(help="Number of measures between logs.")
+    ] = 1,
+    offline: Annotated[bool, typer.Option(help="Run in offline mode")] = False,
+    country_iso_code: Annotated[
+        str, typer.Option(help="3-letter country ISO code for offline mode")
+    ] = None,
+    region: Annotated[
+        str, typer.Option(help="Region/province for offline mode")
+    ] = None,
+):
+    """Monitor your machine's carbon emissions."""
+    if offline:
+        if not country_iso_code:
+            print(
+                "ERROR: country_iso_code is required for offline mode", file=sys.stderr
+            )
+            raise typer.Exit(1)
+
+        tracker = OfflineEmissionsTracker(
+            experiment_name=experiment_name,
+            measure_power_secs=measure_power_secs,
+            country_iso_code=country_iso_code,
+            region=region,
+        )
+    else:
+        cc_logger = logging.getLogger('codecarbon')
+        format = "[%(name)s %(levelname)s @ %(asctime)s] %(message)s"
+        formatter = logging.Formatter(format, datefmt="%Y-%m-%dT%H:%M:%S")
+        handler = logging.FileHandler(os.path.join(output_dir, experiment_name, "codecarbon.log"), mode="w")
+        handler.setFormatter(formatter)
+        cc_logger.addHandler(handler)
+        cc_logger.setLevel(logging.INFO)
+        tracker = EmissionsTracker(
+            gpu_ids='0,1', project_name='hw_sw_comparison',
+            experiment_name=experiment_name,
+            save_to_file=False,
+            measure_power_secs=measure_power_secs,
+            tracking_mode='machine',
+            save_to_api=False,
+            log_level="info",
+            api_call_interval=-1,
+            log_interval=log_interval,
+            save_to_logger=True,
+            logging_logger=LoggerOutput(cc_logger, logging.INFO),
+        )
+        cc_logger.handlers.pop(-1)  # Remove CodeCarbon default logging
+
+    def signal_handler(signum, frame):
+        print("\nReceived signal to stop. Saving emissions data...")
+        tracker.stop()
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+
+    print("CodeCarbon is going in an infinite loop to monitor this machine.")
+    print("Press Ctrl+C to stop and save emissions data.")
+
+    tracker.start()
+    try:
+        while True:
+            if (
+                hasattr(tracker, "_another_instance_already_running")
+                and tracker._another_instance_already_running
+            ):
+                print("Another instance of CodeCarbon is already running. Exiting.")
+                break
+            time.sleep(300)
+    except Exception as e:
+        print(f"\nError occurred: {e}")
+        tracker.stop()
+        raise e
 
 def questionary_prompt(prompt, list_options, default):
     value = questionary.select(

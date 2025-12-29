@@ -59,6 +59,8 @@ class RAM(BaseHardware):
         self._children = children
         self._tracking_mode = tracking_mode
         self._force_ram_power = force_ram_power
+        self._used_ram = None
+        self._available_ram = None
         # Check if using ARM architecture
         self.is_arm_cpu = self._detect_arm_cpu()
 
@@ -138,19 +140,21 @@ class RAM(BaseHardware):
 
         return dimm_count
 
-    def _calculate_ram_power(self, memory_gb: float) -> float:
+    def _calculate_ram_power(self, memory_gb: float, used_memory_gb: float) -> float:
         """
         Calculate RAM power consumption based on the total RAM size using a more
         sophisticated model that better scales with larger memory sizes.
 
         Args:
             memory_gb: Total RAM in GB
+            used_memory_gb: RAM used by a process, or the whole machine, in GB
 
         Returns:
             float: Estimated power consumption in watts
         """
         # Detect how many DIMMs might be present
         dimm_count = self._estimate_dimm_count(memory_gb)
+        used_dimm_count = math.ceil(used_memory_gb / memory_gb * dimm_count)
 
         # Base power consumption per DIMM
         if self.is_arm_cpu:
@@ -189,6 +193,8 @@ class RAM(BaseHardware):
                 + base_power_per_dimm * 0.7 * (dimm_count - 16)
             )
 
+        total_power *= used_dimm_count / dimm_count
+
         # Apply minimum power constraint
         return max(min_power, total_power)
 
@@ -197,11 +203,17 @@ class RAM(BaseHardware):
         Compute the used RAM by the process's children
 
         Returns:
-            list(int): The list of RAM values
+            list(int): The lists of RAM values (resident and virtual)
         """
         current_process = psutil.Process(self._pid)
         children = current_process.children(recursive=True)
-        return [child.memory_info().rss for child in children]
+        resident_memories = []
+        virtual_memories = []
+        for child in children:
+            mem_info = child.memory_info()
+            resident_memories.append(mem_info.rss)
+            virtual_memories.append(mem_info.vms)
+        return resident_memories, virtual_memories
 
     def _read_slurm_scontrol(self):
         try:
@@ -287,15 +299,18 @@ class RAM(BaseHardware):
     @property
     def process_memory_GB(self):
         """
-        Property to compute the process's total memory usage in bytes.
+        Property to compute the process's resident and virtual memory usage in bytes.
 
         Returns:
             float: RAM usage (GB)
         """
-        children_memories = self._get_children_memories() if self._children else []
-        main_memory = psutil.Process(self._pid).memory_info().rss
-        memories = children_memories + [main_memory]
-        return sum([m for m in memories if m] + [0]) / B_TO_GB
+        children_rss_memories, children_vms_memories = self._get_children_memories() if self._children else []
+        main_memory_info = psutil.Process(self._pid).memory_info()
+        rss_memories = children_rss_memories + [main_memory_info.rss]
+        vms_memories = children_vms_memories + [main_memory_info.vms]
+        self._used_ram = sum([m for m in rss_memories if m] + [0]) / B_TO_GB
+        self._available_ram = sum([m for m in vms_memories if m] + [0]) / B_TO_GB
+        return self._used_ram, self._available_ram
 
     @property
     def machine_memory_GB(self):
@@ -327,17 +342,33 @@ class RAM(BaseHardware):
             return Power.from_watts(self._force_ram_power)
 
         try:
-            memory_GB = (
+            machine_memory_GB = self.machine_memory_GB
+            used_memory_GB = (
                 self.machine_memory_GB
                 if self._tracking_mode == "machine"
-                else self.process_memory_GB
+                else self.process_memory_GB[0] # Used, not available
             )
-            ram_power = Power.from_watts(self._calculate_ram_power(memory_GB))
+            ram_power = Power.from_watts(self._calculate_ram_power(machine_memory_GB, used_memory_GB))
             logger.debug(
-                f"RAM power estimation: {ram_power.W:.2f}W for {memory_GB:.2f}GB"
+                f"RAM power estimation: {ram_power.W:.2f}W for {used_memory_GB:.2f}/{machine_memory_GB:.2f} GB"
             )
         except Exception as e:
             logger.warning(f"Could not measure RAM Power ({str(e)})")
             ram_power = Power.from_watts(0)
 
         return ram_power
+    
+    def extra_data(self) -> float:
+        # Returns Used and Allocated RAM, in that order
+        if self._tracking_mode == "machine":
+            used = psutil.virtual_memory().used / B_TO_GB
+            available = psutil.virtual_memory().available / B_TO_GB
+        elif self._tracking_mode == "process":
+            if self._used_ram is None:
+                used, available = self.process_memory_GB()
+            else:
+                used, available = self._used_ram, self._available_ram
+            self._used_ram, self._available_ram = None, None
+        else:
+            raise Exception(f"Unknown tracking_mode {self._tracking_mode}")
+        return {"used": used, "available": available}

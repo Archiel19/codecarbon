@@ -14,7 +14,7 @@ def set_logger_format(custom_preamble: Optional[str] = ""):
     handler.setFormatter(formatter)
 
     if logger.hasHandlers():
-        logger.handlers.clear()
+        logger.handlers.pop(0) # Remove default handler
 
     logger.addHandler(handler)
 

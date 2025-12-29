@@ -163,6 +163,7 @@ class BaseEmissionsTracker(ABC):
         save_to_api: Optional[bool] = _sentinel,
         save_to_logger: Optional[bool] = _sentinel,
         logging_logger: Optional[LoggerOutput] = _sentinel,
+        log_interval: Optional[int] = _sentinel,
         save_to_prometheus: Optional[bool] = _sentinel,
         save_to_logfire: Optional[bool] = _sentinel,
         prometheus_url: Optional[str] = _sentinel,
@@ -309,6 +310,7 @@ class BaseEmissionsTracker(ABC):
         self._set_from_conf(save_to_file, "save_to_file", True, bool)
         self._set_from_conf(save_to_logger, "save_to_logger", False, bool)
         self._set_from_conf(logging_logger, "logging_logger")
+        self._set_from_conf(log_interval, "log_interval", 8, int)
         self._set_from_conf(save_to_prometheus, "save_to_prometheus", False, bool)
         self._set_from_conf(save_to_logfire, "save_to_logfire", False, bool)
         self._set_from_conf(prometheus_url, "prometheus_url", "localhost:9091")
@@ -341,10 +343,9 @@ class BaseEmissionsTracker(ABC):
         self._cpu_power: Power = Power.from_watts(watts=0)
         self._gpu_power: Power = Power.from_watts(watts=0)
         self._ram_power: Power = Power.from_watts(watts=0)
-        # Running average tracking for power
-        self._cpu_power_sum: float = 0.0
-        self._gpu_power_sum: float = 0.0
-        self._ram_power_sum: float = 0.0
+        self._cpu_usage: float = 0.0
+        self._ram_usage: float = 0.0
+        self._ram_available: float = 0.0
         self._power_measurement_count: int = 0
         self._measure_occurrence: int = 0
         self._cloud = None
@@ -376,6 +377,15 @@ class BaseEmissionsTracker(ABC):
         )
         logger.info(f"  CPU model: {self._conf.get('cpu_model')}")
         logger.info(f"  GPU count: {self._conf.get('gpu_count')}")
+        
+        # Individual GPU measurements
+        gpu_count = self._conf.get('gpu_count')
+        self._individual_gpu_energy: List[Energy] = [Energy.from_energy(kWh=0)] * gpu_count
+        self._individual_gpu_power: List[Power] = [Power.from_watts(watts=0)] * gpu_count
+        self._individual_gpu_usage: List[float] = [0.0] * gpu_count
+        self._individual_gpu_vram_usage: List[float] = [0.0] * gpu_count
+        self._individual_gpu_temperature: List[float] = [0.0] * gpu_count
+
         if self._gpu_ids:
             logger.info(
                 f"  GPU model: {self._conf.get('gpu_model')} BUT only tracking these GPU ids : {self._conf.get('gpu_ids')}"
@@ -757,23 +767,6 @@ class BaseEmissionsTracker(ABC):
             cloud_provider = cloud.provider
             cloud_region = cloud.region
 
-        # Calculate average power values across all measurements
-        avg_cpu_power = (
-            self._cpu_power_sum / self._power_measurement_count
-            if self._power_measurement_count > 0
-            else self._cpu_power.W
-        )
-        avg_gpu_power = (
-            self._gpu_power_sum / self._power_measurement_count
-            if self._power_measurement_count > 0
-            else self._gpu_power.W
-        )
-        avg_ram_power = (
-            self._ram_power_sum / self._power_measurement_count
-            if self._power_measurement_count > 0
-            else self._ram_power.W
-        )
-
         total_emissions = EmissionsData(
             timestamp=datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
             project_name=self._project_name,
@@ -782,9 +775,17 @@ class BaseEmissionsTracker(ABC):
             duration=duration.seconds,
             emissions=emissions,  # kg
             emissions_rate=emissions / duration.seconds,  # kg/s
-            cpu_power=avg_cpu_power,
-            gpu_power=avg_gpu_power,
-            ram_power=avg_ram_power,
+            cpu_power=self._cpu_power.W,
+            gpu_power=self._gpu_power.W,
+            ram_power=self._ram_power.W,
+            cpu_usage=self._cpu_usage,
+            ram_usage=self._ram_usage,
+            ram_available=self._ram_available,
+            individual_gpu_power=[p.W for p in self._individual_gpu_power],
+            individual_gpu_energy=[e.kWh for e in self._individual_gpu_energy],
+            individual_gpu_usage=self._individual_gpu_usage,
+            individual_gpu_vram_usage=self._individual_gpu_vram_usage,
+            individual_gpu_temperature=self._individual_gpu_temperature,
             cpu_energy=self._total_cpu_energy.kWh,
             gpu_energy=self._total_gpu_energy.kWh,
             ram_energy=self._total_ram_energy.kWh,
@@ -863,8 +864,12 @@ class BaseEmissionsTracker(ABC):
             (
                 power,
                 energy,
+                extra_data,
             ) = hardware.measure_power_and_energy(last_duration=last_duration)
             # Apply the PUE of the datacenter to the consumed energy
+            if isinstance(hardware, GPU):
+                per_gpu_energy = energy
+                energy = sum(energy, start=Energy.from_energy(kWh=0))
             energy *= self._pue
             water = Water.from_litres(litres=self._wue * energy.kWh)
             self._total_energy += energy
@@ -872,33 +877,50 @@ class BaseEmissionsTracker(ABC):
             if isinstance(hardware, CPU):
                 self._total_cpu_energy += energy
                 self._cpu_power = power
-                # Accumulate for running average
-                self._cpu_power_sum += power.W
-                logger.info(
-                    f"Delta energy consumed for CPU with {hardware._mode} : {energy.kWh:.6f} kWh"
-                    + f", power : {self._cpu_power.W} W"
-                )
-                logger.info(
-                    f"Energy consumed for All CPU : {self._total_cpu_energy.kWh:.6f} kWh"
-                )
+                self._cpu_usage = extra_data["cpu_load"]
+                # logger.info(
+                #     f"Delta energy consumed for CPU with {hardware._mode} : {energy.kWh:.6f} kWh"
+                #     + f", power : {self._cpu_power.W} W, usage : {self._cpu_usage}"
+                # )
+                # logger.info(
+                #     f"Energy consumed for All CPU : {self._total_cpu_energy.kWh:.6f} kWh"
+                # )
             elif isinstance(hardware, GPU):
-                self._total_gpu_energy += energy
-                self._gpu_power = power
-                # Accumulate for running average
-                self._gpu_power_sum += power.W
-                logger.info(
-                    f"Energy consumed for all GPUs : {self._total_gpu_energy.kWh:.6f} kWh"
-                    + f". Total GPU Power : {self._gpu_power.W} W"
-                )
+                gpu_count = self._conf.get('gpu_count')
+                for gpu_i in range(gpu_count):
+                    self._individual_gpu_energy[gpu_i] += per_gpu_energy[gpu_i]
+                    self._individual_gpu_power[gpu_i] = power[gpu_i]
+                    self._individual_gpu_usage[gpu_i] = extra_data["gpu_utilization"][gpu_i]
+                    self._individual_gpu_vram_usage[gpu_i] = extra_data["used_memory"][gpu_i]
+                    self._individual_gpu_temperature[gpu_i] = extra_data["temperature"][gpu_i]
+                    # logger.info(
+                    #     f"Energy consumed for GPU {gpu_i} : {self._individual_gpu_energy[gpu_i].kWh:.6f} kWh"
+                    #     + f". GPU {gpu_i} Power : {self._individual_gpu_power[gpu_i].W} W."
+                    #     + f"GPU {gpu_i} Usage : {self._individual_gpu_usage[gpu_i]}. "
+                    #     + f"GPU {gpu_i} VRAM Usage : {self._individual_gpu_vram_usage[gpu_i]} GB. "
+                    #     + f"GPU {gpu_i} Temperature : {self._individual_gpu_temperature[gpu_i]} C. "
+                    # )
+                self._total_gpu_energy = sum(self._individual_gpu_energy, start=Energy.from_energy(kWh=0))
+                self._gpu_power = sum(self._individual_gpu_power, start=Power.from_watts(watts=0))
+                # logger.info(
+                #     f"Energy consumed for all GPUs : {self._total_gpu_energy.kWh:.6f} kWh"
+                #     + f". Total GPU Power : {self._gpu_power.W} W. "
+                    # + f"Average GPU Usage : {gpu_usage}. "
+                    # + f"Total GPU VRAM Usage : {gpu_vram_usage} GB. "
+                    # + f"Average GPU Temperature : {gpu_temperature} C. "
+                # )
             elif isinstance(hardware, RAM):
+                used = extra_data["used"]
+                available = extra_data["available"]
                 self._total_ram_energy += energy
                 self._ram_power = power
-                # Accumulate for running average
-                self._ram_power_sum += power.W
-                logger.info(
-                    f"Energy consumed for RAM : {self._total_ram_energy.kWh:.6f} kWh"
-                    + f". RAM Power : {self._ram_power.W} W"
-                )
+                self._ram_usage = used
+                self._ram_available = available
+                # logger.info(
+                #     f"Energy consumed for RAM : {self._total_ram_energy.kWh:.6f} kWh"
+                #     + f". RAM Power : {self._ram_power.W} W. Used RAM : {self._ram_used} GB. "
+                #     + f"Virtual RAM : {self._ram_available} GB."
+                # )
             elif isinstance(hardware, AppleSiliconChip):
                 if hardware.chip_part == "CPU":
                     self._total_cpu_energy += energy
@@ -926,9 +948,9 @@ class BaseEmissionsTracker(ABC):
             )
         # Increment measurement count for power averaging
         self._power_measurement_count += 1
-        logger.info(
-            f"{self._total_energy.kWh:.6f} kWh of electricity and {self._total_water.litres:.6f} L of water were used since the beginning."
-        )
+        # logger.info(
+        #     f"{self._total_energy.kWh:.6f} kWh of electricity and {self._total_water.litres:.6f} L of water were used since the beginning."
+        # )
 
     def _measure_power_and_energy(self) -> None:
         """
@@ -959,6 +981,19 @@ class BaseEmissionsTracker(ABC):
         self._do_measurements()
         self._last_measured_time = time.perf_counter()
         self._measure_occurrence += 1
+        
+        if (
+            self._log_interval != -1
+            and len(self._output_handlers) > 0
+            and self._measure_occurrence >= self._log_interval
+        ):
+            emissions_data = self._prepare_emissions_data()
+            emissions_data_delta = self._compute_emissions_delta(emissions_data)
+
+            self._persist_data(
+                total_emissions=emissions_data, delta_emissions=emissions_data_delta
+            )
+        
         # Special case: metrics and api calls are sent every `api_call_interval` measures
         if (
             self._api_call_interval != -1

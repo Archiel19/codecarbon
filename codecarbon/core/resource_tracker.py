@@ -68,6 +68,7 @@ class ResourceTracker:
         hardware_cpu = CPU.from_utils(
             output_dir=self.tracker._output_dir,
             mode="intel_rapl",
+            tracking_mode=self.tracker._tracking_mode,
             rapl_include_dram=self.tracker._rapl_include_dram,
             rapl_prefer_psys=self.tracker._rapl_prefer_psys,
         )

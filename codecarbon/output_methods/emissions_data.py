@@ -1,6 +1,7 @@
 import json
 from collections import OrderedDict
 from dataclasses import dataclass
+from typing import List
 
 
 @dataclass
@@ -19,6 +20,14 @@ class EmissionsData:
     cpu_power: float
     gpu_power: float
     ram_power: float
+    cpu_usage: float
+    ram_usage: float
+    ram_available: float
+    individual_gpu_power: List[float]
+    individual_gpu_energy: List[float]
+    individual_gpu_usage: List[float]
+    individual_gpu_vram_usage: List[float]
+    individual_gpu_temperature: List[float]
     cpu_energy: float
     gpu_energy: float
     ram_energy: float
