@@ -17,6 +17,7 @@ class EmissionsData:
     duration: float
     emissions: float
     emissions_rate: float
+    child_processes: int
     cpu_power: float
     gpu_power: float
     ram_power: float

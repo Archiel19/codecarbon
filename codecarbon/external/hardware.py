@@ -311,11 +311,13 @@ class CPU(BaseHardware):
             cpu_load = psutil.cpu_percent(
                 interval=0.5, percpu=False
             )  # Convert to 0-1 range
+            num_children = 0
         elif self._tracking_mode == "process":
             cpu_load = self._process.cpu_percent(interval=0.5) / self._cpu_count
+            num_children = len(self._process.children(recursive=True))
         else:
             raise Exception(f"Unknown tracking_mode {self._tracking_mode}")
-        return {"cpu_load": cpu_load}
+        return {"cpu_load": cpu_load, "num_children": num_children}
 
     def measure_power_and_energy(self, last_duration: float) -> Tuple[Power, Energy]:
         if self._mode == "intel_rapl":

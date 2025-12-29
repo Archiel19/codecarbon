@@ -340,6 +340,7 @@ class BaseEmissionsTracker(ABC):
         self._total_cpu_energy: Energy = Energy.from_energy(kWh=0)
         self._total_gpu_energy: Energy = Energy.from_energy(kWh=0)
         self._total_ram_energy: Energy = Energy.from_energy(kWh=0)
+        self._child_processes: int = 0
         self._cpu_power: Power = Power.from_watts(watts=0)
         self._gpu_power: Power = Power.from_watts(watts=0)
         self._ram_power: Power = Power.from_watts(watts=0)
@@ -775,6 +776,7 @@ class BaseEmissionsTracker(ABC):
             duration=duration.seconds,
             emissions=emissions,  # kg
             emissions_rate=emissions / duration.seconds,  # kg/s
+            child_processes=self._child_processes,
             cpu_power=self._cpu_power.W,
             gpu_power=self._gpu_power.W,
             ram_power=self._ram_power.W,
@@ -878,6 +880,7 @@ class BaseEmissionsTracker(ABC):
                 self._total_cpu_energy += energy
                 self._cpu_power = power
                 self._cpu_usage = extra_data["cpu_load"]
+                self._child_processes = extra_data["num_children"]
                 # logger.info(
                 #     f"Delta energy consumed for CPU with {hardware._mode} : {energy.kWh:.6f} kWh"
                 #     + f", power : {self._cpu_power.W} W, usage : {self._cpu_usage}"
