@@ -306,11 +306,9 @@ class CPU(BaseHardware):
         self._power_history = []
         return Power.from_watts(cpu_power)
     
-    def extra_data(self) -> float: # Blatantly copied from _get_power_from_cpu_load
+    def extra_data(self) -> float: # Adapted from _get_power_from_cpu_load
         if self._tracking_mode == "machine":
-            cpu_load = psutil.cpu_percent(
-                interval=0.5, percpu=False
-            )  # Convert to 0-1 range
+            cpu_load = psutil.cpu_percent(interval=0.5)
             num_children = 0
         elif self._tracking_mode == "process":
             cpu_load = self._process.cpu_percent(interval=0.5) / self._cpu_count

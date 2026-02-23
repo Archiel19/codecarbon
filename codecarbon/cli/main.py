@@ -420,15 +420,21 @@ def monitor_log(
     experiment_name: Annotated[
         str, typer.Argument(help="Experiment name")
     ] = 'TEST',
+    project_name: Annotated[
+        str, typer.Argument(help="Project name")
+    ] = 'TEST',
     output_dir: Annotated[
         str, typer.Argument(help='Log output directory')
     ] = '/home/marta/PhD/project1/EXPERIMENTS',
     measure_power_secs: Annotated[
         int, typer.Argument(help="Interval between two measures.")
-    ] = 15,
+    ] = 5,
     log_interval: Annotated[
         int, typer.Argument(help="Number of measures between logs.")
     ] = 1,
+    gpu_ids: Annotated[
+        str, typer.Argument(help="GPU IDs to track.")
+    ] = None,
     offline: Annotated[bool, typer.Option(help="Run in offline mode")] = False,
     country_iso_code: Annotated[
         str, typer.Option(help="3-letter country ISO code for offline mode")
@@ -438,6 +444,13 @@ def monitor_log(
     ] = None,
 ):
     """Monitor your machine's carbon emissions."""
+    cc_logger = logging.getLogger('codecarbon')
+    format = "[%(name)s %(levelname)s @ %(asctime)s] %(message)s"
+    formatter = logging.Formatter(format, datefmt="%Y-%m-%dT%H:%M:%S")
+    handler = logging.FileHandler(os.path.join(output_dir, experiment_name, "codecarbon.log"), mode="w")
+    handler.setFormatter(formatter)
+    cc_logger.addHandler(handler)
+    cc_logger.setLevel(logging.INFO)
     if offline:
         if not country_iso_code:
             print(
@@ -446,21 +459,25 @@ def monitor_log(
             raise typer.Exit(1)
 
         tracker = OfflineEmissionsTracker(
+            gpu_ids=gpu_ids,
+            project_name=project_name,
             experiment_name=experiment_name,
+            save_to_file=False,
             measure_power_secs=measure_power_secs,
+            tracking_mode='machine',
+            save_to_api=False,
+            log_level="info",
+            api_call_interval=-1,
+            log_interval=log_interval,
+            save_to_logger=True,
+            logging_logger=LoggerOutput(cc_logger, logging.INFO),
             country_iso_code=country_iso_code,
             region=region,
         )
     else:
-        cc_logger = logging.getLogger('codecarbon')
-        format = "[%(name)s %(levelname)s @ %(asctime)s] %(message)s"
-        formatter = logging.Formatter(format, datefmt="%Y-%m-%dT%H:%M:%S")
-        handler = logging.FileHandler(os.path.join(output_dir, experiment_name, "codecarbon.log"), mode="w")
-        handler.setFormatter(formatter)
-        cc_logger.addHandler(handler)
-        cc_logger.setLevel(logging.INFO)
         tracker = EmissionsTracker(
-            gpu_ids='0,1', project_name='hw_sw_comparison',
+            gpu_ids=gpu_ids,
+            project_name=project_name,
             experiment_name=experiment_name,
             save_to_file=False,
             measure_power_secs=measure_power_secs,
@@ -472,7 +489,7 @@ def monitor_log(
             save_to_logger=True,
             logging_logger=LoggerOutput(cc_logger, logging.INFO),
         )
-        cc_logger.handlers.pop(-1)  # Remove CodeCarbon default logging
+    cc_logger.handlers.pop(-1)  # Remove CodeCarbon default logging
 
     def signal_handler(signum, frame):
         print("\nReceived signal to stop. Saving emissions data...")
