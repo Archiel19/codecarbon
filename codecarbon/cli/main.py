@@ -421,6 +421,9 @@ def monitor_log(
     log_interval: Annotated[
         int, typer.Option(help="Number of measures between logs.")
     ] = 1,
+    log_time_series: Annotated[
+        bool, typer.Option(help="Log instantaneous measurements instead of average.")
+    ] = True,
     gpu_ids: Annotated[str, typer.Option(help="GPU IDs to track.")] = None,
     offline: Annotated[bool, typer.Option(help="Run in offline mode")] = False,
     country_iso_code: Annotated[
@@ -444,7 +447,7 @@ def monitor_log(
             experiment_name=experiment_name,
             save_to_file=False,
             measure_power_secs=measure_power_secs,
-            log_time_series=True,
+            log_time_series=log_time_series,
             tracking_mode='machine',
             save_to_api=False,
             log_level="info",

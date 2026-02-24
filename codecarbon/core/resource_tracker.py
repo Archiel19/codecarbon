@@ -4,7 +4,7 @@ from typing import List, Union
 from codecarbon.core import cpu, gpu, powermetrics
 from codecarbon.core.config import parse_gpu_ids
 from codecarbon.core.util import detect_cpu_model, is_linux_os, is_mac_os, is_windows_os
-from codecarbon.external.hardware import CPU, GPU, MODE_CPU_LOAD, AppleSiliconChip
+from codecarbon.external.hardware import GB_TO_B, CPU, GPU, MODE_CPU_LOAD, AppleSiliconChip
 from codecarbon.external.logger import logger
 from codecarbon.external.ram import RAM
 
@@ -226,15 +226,22 @@ class ResourceTracker:
             logger.info("Tracking Nvidia GPU via pynvml")
             gpu_devices = GPU.from_utils(self.tracker._gpu_ids)
             self.tracker._hardware.append(gpu_devices)
-            gpu_names = [n["name"] for n in gpu_devices.devices.get_gpu_static_info()]
+            gpu_names = []
+            gpu_vrams = []
+            for n in gpu_devices.devices.get_gpu_static_info():
+                gpu_names.append(n["name"])
+                gpu_vrams.append(n["total_memory"] / GB_TO_B)
             gpu_names_dict = Counter(gpu_names)
-            self.tracker._conf["gpu_model"] = "".join(
+            self.tracker._conf["gpu_model"] = ", ".join(
                 [f"{i} x {name}" for name, i in gpu_names_dict.items()]
             )
             if self.tracker._conf.get("gpu_count") is None:
                 self.tracker._conf["gpu_count"] = len(
                     gpu_devices.devices.get_gpu_static_info()
                 )
+            self.tracker._conf["gpu_vram"] = ", ".join(
+                [f"GPU-{i}: {mem:.3f} GB" for i, mem in enumerate(gpu_vrams)]
+            )
             self.gpu_tracker = "pynvml"
         else:
             logger.info("No GPU found.")

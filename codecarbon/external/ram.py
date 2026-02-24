@@ -8,7 +8,7 @@ import psutil
 
 from codecarbon.core.units import Power
 from codecarbon.core.util import SLURM_JOB_ID
-from codecarbon.external.hardware import B_TO_GB, BaseHardware
+from codecarbon.external.hardware import GB_TO_B, BaseHardware
 from codecarbon.external.logger import logger
 
 RAM_SLOT_POWER_X86 = 5  # Watts
@@ -60,7 +60,7 @@ class RAM(BaseHardware):
         self._tracking_mode = tracking_mode
         self._force_ram_power = force_ram_power
         self._used_ram = None
-        self._available_ram = None
+        self._mem_percent = None
         # Check if using ARM architecture
         self.is_arm_cpu = self._detect_arm_cpu()
 
@@ -208,12 +208,12 @@ class RAM(BaseHardware):
         current_process = psutil.Process(self._pid)
         children = current_process.children(recursive=True)
         resident_memories = []
-        virtual_memories = []
+        memory_percents = []
         for child in children:
             mem_info = child.memory_info()
             resident_memories.append(mem_info.rss)
-            virtual_memories.append(mem_info.vms)
-        return resident_memories, virtual_memories
+            memory_percents.append(child.memory_percent('rss'))
+        return resident_memories, memory_percents
 
     def _read_slurm_scontrol(self):
         try:
@@ -261,13 +261,13 @@ class RAM(BaseHardware):
                 "Could not find mem= after running `scontrol show job $SLURM_JOB_ID` "
                 + "to count SLURM-available RAM. Using the machine's total RAM."
             )
-            return psutil.virtual_memory().total / B_TO_GB
+            return psutil.virtual_memory().total / GB_TO_B
         if len(mem_matches) > 1:
             logger.warning(
                 "Unexpected output after running `scontrol show job $SLURM_JOB_ID` "
                 + "to count SLURM-available RAM. Using the machine's total RAM."
             )
-            return psutil.virtual_memory().total / B_TO_GB
+            return psutil.virtual_memory().total / GB_TO_B
 
         return mem_matches[0].replace("mem=", "")
 
@@ -289,7 +289,7 @@ class RAM(BaseHardware):
                 + "to retrieve SLURM-available RAM."
                 + "Using the machine's total RAM."
             )
-            return psutil.virtual_memory().total / B_TO_GB
+            return psutil.virtual_memory().total / GB_TO_B
         mem = self._parse_scontrol(scontrol_str)
         if isinstance(mem, str):
             mem = self._parse_scontrol_memory_GB(mem)
@@ -304,13 +304,14 @@ class RAM(BaseHardware):
         Returns:
             float: RAM usage (GB)
         """
-        children_rss_memories, children_vms_memories = self._get_children_memories() if self._children else []
-        main_memory_info = psutil.Process(self._pid).memory_info()
-        rss_memories = children_rss_memories + [main_memory_info.rss]
-        vms_memories = children_vms_memories + [main_memory_info.vms]
-        self._used_ram = sum([m for m in rss_memories if m] + [0]) / B_TO_GB
-        self._available_ram = sum([m for m in vms_memories if m] + [0]) / B_TO_GB
-        return self._used_ram, self._available_ram
+        children_rss_mem, children_mem_percents = self._get_children_memories() if self._children else []
+        main_memory_rss = psutil.Process(self._pid).memory_info().rss
+        main_memory_percent = psutil.Process(self._pid).memory_percent('rss')
+        rss_memories = children_rss_mem + [main_memory_rss]
+        mem_percents = children_mem_percents + [main_memory_percent]
+        self._used_ram = sum([m for m in rss_memories if m] + [0]) / GB_TO_B
+        self._mem_percent = sum([m for m in mem_percents if m] + [0])
+        return self._used_ram, self._mem_percent
 
     @property
     def machine_memory_GB(self):
@@ -323,7 +324,7 @@ class RAM(BaseHardware):
         return (
             self.slurm_memory_GB
             if SLURM_JOB_ID
-            else psutil.virtual_memory().total / B_TO_GB
+            else psutil.virtual_memory().total / GB_TO_B
         )
 
     def total_power(self) -> Power:
@@ -361,14 +362,14 @@ class RAM(BaseHardware):
     def extra_data(self) -> float:
         # Returns Used and Allocated RAM, in that order
         if self._tracking_mode == "machine":
-            used = psutil.virtual_memory().used / B_TO_GB
-            available = psutil.virtual_memory().available / B_TO_GB
+            used = psutil.virtual_memory().used / GB_TO_B
+            percent = psutil.virtual_memory().percent
         elif self._tracking_mode == "process":
             if self._used_ram is None:
-                used, available = self.process_memory_GB()
+                used, percent = self.process_memory_GB()
             else:
-                used, available = self._used_ram, self._available_ram
-            self._used_ram, self._available_ram = None, None
+                used, percent = self._used_ram, self._mem_percent
+            self._used_ram, self._mem_percent = None, None
         else:
             raise Exception(f"Unknown tracking_mode {self._tracking_mode}")
-        return {"used": used, "available": available}
+        return {"used": used, "percent": percent}

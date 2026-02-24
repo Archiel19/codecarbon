@@ -92,6 +92,7 @@ class GPUDevice:
             "total_memory": memory.total,
             "used_memory": memory.used,
             "temperature": self._get_temperature(),
+            "fan_percent": self._get_fan_percent(),
             "power_usage": self._get_power_usage(),
             "power_limit": self._power_limit,
             "total_energy_consumption": self._get_total_energy_consumption(),
@@ -152,6 +153,12 @@ class GPUDevice:
         https://docs.nvidia.com/deploy/nvml-api/group__nvmlDeviceQueries.html#group__nvmlDeviceQueries_1g92d1c5182a14dd4be7090e3c1480b121
         """
         return pynvml.nvmlDeviceGetTemperature(self.handle, pynvml.NVML_TEMPERATURE_GPU)
+
+    def _get_fan_percent(self) -> int:
+        """Returns intended fan speed as a percentage of maximum noise tolerance fan speed
+        https://docs.nvidia.com/deploy/nvml-api/group__nvmlDeviceQueries.html#group__nvmlDeviceQueries_1ge8e3e5b5b9dcf436e4537982cf647d4e
+        """
+        return pynvml.nvmlDeviceGetFanSpeed(self.handle)
 
     def _get_power_usage(self) -> int:
         """Returns power usage in milliwatts
@@ -254,6 +261,7 @@ class AllGPUDevices:
                 "total_memory": 16945512448,
                 "used_memory": 131072,
                 "temperature": 28,
+                "fan_percent": 56,
                 "total_energy_consumption":2000,
                 "power_usage": 42159,
                 "power_limit": 300000,

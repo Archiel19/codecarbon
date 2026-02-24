@@ -17,21 +17,14 @@ class EmissionsData:
     duration: float
     emissions: float
     emissions_rate: float
-    child_processes: int
     cpu_power: float
-    gpu_power: float
     ram_power: float
-    cpu_usage: float
-    ram_usage: float
-    ram_available: float
-    individual_gpu_power: List[float]
-    individual_gpu_energy: List[float]
-    individual_gpu_usage: List[float]
-    individual_gpu_vram_usage: List[float]
-    individual_gpu_temperature: List[float]
+    gpu_power: float
+    per_gpu_power: List[float]
     cpu_energy: float
-    gpu_energy: float
     ram_energy: float
+    gpu_energy: float
+    per_gpu_energy: List[float]
     energy_consumed: float
     water_consumed: float
     country_name: str
@@ -50,8 +43,11 @@ class EmissionsData:
     latitude: float
     ram_total_size: float
     tracking_mode: str
+    per_gpu_utilization_percent: List[float]
+    per_gpu_vram_used_gb: List[float]
+    per_gpu_temperature: List[float]
+    per_gpu_fan_percent: List[float]
     cpu_utilization_percent: float = 0.0
-    gpu_utilization_percent: float = 0.0
     ram_utilization_percent: float = 0.0
     ram_used_gb: float = 0.0
     on_cloud: str = "N"
@@ -92,11 +88,13 @@ class TaskEmissionsData:
     emissions: float
     emissions_rate: float
     cpu_power: float
-    gpu_power: float
     ram_power: float
+    gpu_power: float
+    per_gpu_power: List[float]
     cpu_energy: float
-    gpu_energy: float
     ram_energy: float
+    gpu_energy: float
+    per_gpu_energy: List[float]
     energy_consumed: float
     water_consumed: float
     country_name: str
@@ -115,8 +113,11 @@ class TaskEmissionsData:
     latitude: float
     ram_total_size: float
     tracking_mode: str
+    per_gpu_utilization_percent: List[float]
+    per_gpu_vram_used_gb: List[float]
+    per_gpu_temperature: List[float]
+    per_gpu_fan_percent: List[float]
     cpu_utilization_percent: float = 0.0
-    gpu_utilization_percent: float = 0.0
     ram_utilization_percent: float = 0.0
     ram_used_gb: float = 0.0
     on_cloud: str = "N"
