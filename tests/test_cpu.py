@@ -11,11 +11,44 @@ from codecarbon.core.cpu import (
     IntelPowerGadget,
     IntelRAPL,
     is_powergadget_available,
+    is_psutil_available,
 )
+from codecarbon.core.resource_tracker import ResourceTracker
 from codecarbon.core.units import Energy, Power, Time
 from codecarbon.core.util import count_physical_cpus
 from codecarbon.external.hardware import CPU
 from codecarbon.input import DataSource
+
+
+class TestCPU(unittest.TestCase):
+    @mock.patch("psutil.cpu_times")
+    def test_is_psutil_available_with_nice(self, mock_cpu_times):
+        # Create a mock with 'nice' attribute
+        mock_times = mock.Mock()
+        mock_times.nice = 0.1
+        mock_cpu_times.return_value = mock_times
+        self.assertTrue(is_psutil_available())
+
+    @mock.patch("psutil.cpu_times")
+    def test_is_psutil_available_with_small_nice(self, mock_cpu_times):
+        # Test when nice attribute is too small
+        mock_times = mock.Mock()
+        mock_times.nice = 0.00001
+        mock_cpu_times.return_value = mock_times
+        self.assertFalse(is_psutil_available())
+
+    @mock.patch("psutil.cpu_times")
+    def test_is_psutil_available_without_nice(self, mock_cpu_times):
+        # Create a mock without 'nice' attribute (like Windows)
+        mock_times = mock.Mock(spec=[])  # Empty spec = no attributes
+        mock_cpu_times.return_value = mock_times
+        with mock.patch("psutil.cpu_percent") as mock_cpu_percent:
+            self.assertTrue(is_psutil_available())
+            mock_cpu_percent.assert_called_once_with(interval=0.0, percpu=False)
+
+    @mock.patch("psutil.cpu_times", side_effect=Exception("Test error"))
+    def test_is_psutil_not_available_on_exception(self, mock_cpu_times):
+        self.assertFalse(is_psutil_available())
 
 
 class TestIntelPowerGadget(unittest.TestCase):
@@ -303,13 +336,164 @@ class TestTDP(unittest.TestCase):
         )
 
 
+class TestResourceTrackerCPUTracking(unittest.TestCase):
+    def test_set_cpu_tracking_skips_tdp_when_rapl_available(self):
+        class DummyTracker:
+            def __init__(self):
+                self._conf = {"cpu_physical_count": 1}
+                self._force_cpu_power = None
+                self._output_dir = ""
+                self._rapl_include_dram = False
+                self._rapl_prefer_psys = False
+                self._tracking_mode = "machine"
+                self._hardware = []
+
+        tracker = DummyTracker()
+        resource_tracker = ResourceTracker(tracker)
+        cpu_device = mock.Mock()
+        cpu_device.get_model.return_value = "Mock CPU"
+
+        with mock.patch(
+            "codecarbon.core.resource_tracker.cpu.TDP",
+            side_effect=AssertionError(
+                "TDP should not be instantiated when RAPL is active"
+            ),
+        ) as mocked_tdp, mock.patch(
+            "codecarbon.core.resource_tracker.cpu.is_powergadget_available",
+            return_value=False,
+        ), mock.patch(
+            "codecarbon.core.resource_tracker.cpu.is_rapl_available",
+            return_value=True,
+        ), mock.patch(
+            "codecarbon.core.resource_tracker.powermetrics.is_powermetrics_available",
+            return_value=False,
+        ), mock.patch(
+            "codecarbon.core.resource_tracker.CPU.from_utils",
+            return_value=cpu_device,
+        ) as mocked_from_utils:
+            resource_tracker.set_CPU_tracking()
+
+        mocked_tdp.assert_not_called()
+        mocked_from_utils.assert_called_once_with(
+            output_dir=tracker._output_dir,
+            mode="intel_rapl",
+            rapl_include_dram=tracker._rapl_include_dram,
+            rapl_prefer_psys=tracker._rapl_prefer_psys,
+        )
+        self.assertEqual(resource_tracker.cpu_tracker, "RAPL")
+        self.assertEqual(tracker._conf["cpu_model"], "Mock CPU")
+
+    def test_set_cpu_tracking_force_cpu_load_instantiates_tdp(self):
+        class DummyTracker:
+            def __init__(self):
+                self._conf = {"cpu_physical_count": 2, "force_mode_cpu_load": True}
+                self._force_cpu_power = None
+                self._output_dir = ""
+                self._rapl_include_dram = False
+                self._rapl_prefer_psys = False
+                self._tracking_mode = "machine"
+                self._hardware = []
+
+        tracker = DummyTracker()
+        resource_tracker = ResourceTracker(tracker)
+        fake_tdp = mock.Mock()
+        fake_tdp.tdp = 50
+        fake_tdp.model = "Mock CPU"
+
+        with mock.patch(
+            "codecarbon.core.resource_tracker.cpu.TDP", return_value=fake_tdp
+        ) as mocked_tdp, mock.patch(
+            "codecarbon.core.resource_tracker.ResourceTracker._setup_cpu_load_mode",
+            return_value=True,
+        ) as mocked_setup_cpu_load, mock.patch(
+            "codecarbon.core.resource_tracker.ResourceTracker._setup_fallback_tracking"
+        ) as mocked_fallback, mock.patch(
+            "codecarbon.core.resource_tracker.cpu.is_powergadget_available",
+            return_value=False,
+        ), mock.patch(
+            "codecarbon.core.resource_tracker.cpu.is_rapl_available",
+            return_value=False,
+        ), mock.patch(
+            "codecarbon.core.resource_tracker.powermetrics.is_powermetrics_available",
+            return_value=False,
+        ):
+            resource_tracker.set_CPU_tracking()
+
+        mocked_tdp.assert_called_once_with()
+        mocked_setup_cpu_load.assert_called_once_with(fake_tdp, 100)
+        mocked_fallback.assert_not_called()
+
+    def test_set_cpu_tracking_fallback_instantiates_tdp(self):
+        class DummyTracker:
+            def __init__(self):
+                self._conf = {"cpu_physical_count": 4}
+                self._force_cpu_power = None
+                self._output_dir = ""
+                self._rapl_include_dram = False
+                self._rapl_prefer_psys = False
+                self._tracking_mode = "machine"
+                self._hardware = []
+
+        tracker = DummyTracker()
+        resource_tracker = ResourceTracker(tracker)
+        fake_tdp = mock.Mock()
+        fake_tdp.tdp = 20
+        fake_tdp.model = "Mock CPU"
+
+        with mock.patch(
+            "codecarbon.core.resource_tracker.cpu.TDP", return_value=fake_tdp
+        ) as mocked_tdp, mock.patch(
+            "codecarbon.core.resource_tracker.ResourceTracker._setup_fallback_tracking"
+        ) as mocked_fallback, mock.patch(
+            "codecarbon.core.resource_tracker.cpu.is_powergadget_available",
+            return_value=False,
+        ), mock.patch(
+            "codecarbon.core.resource_tracker.cpu.is_rapl_available",
+            return_value=False,
+        ), mock.patch(
+            "codecarbon.core.resource_tracker.powermetrics.is_powermetrics_available",
+            return_value=False,
+        ):
+            resource_tracker.set_CPU_tracking()
+
+        mocked_tdp.assert_called_once_with()
+        mocked_fallback.assert_called_once_with(fake_tdp, 80)
+
+
 class TestPhysicalCPU(unittest.TestCase):
     def test_count_physical_cpus_windows(self):
         with mock.patch("platform.system", return_value="Windows"):
-            with mock.patch.dict(os.environ, {"NUMBER_OF_PROCESSORS": "4"}):
+
+            with mock.patch(
+                "subprocess.run", return_value=mock.Mock(returncode=0, stdout="4")
+            ):
                 assert count_physical_cpus() == 4
 
-            with mock.patch.dict(os.environ, {}, clear=True):
+            with mock.patch(
+                "subprocess.run", return_value=mock.Mock(returncode=0, stdout="")
+            ):
+                assert count_physical_cpus() == 1
+
+    def test_count_physical_cpus_windows_with_error(self):
+        with mock.patch("platform.system", return_value="Windows"):
+            # Test CalledProcessError
+            with mock.patch(
+                "subprocess.run",
+                side_effect=subprocess.CalledProcessError(1, "powershell"),
+            ):
+                assert count_physical_cpus() == 1
+
+            # Test TimeoutExpired
+            with mock.patch(
+                "subprocess.run",
+                side_effect=subprocess.TimeoutExpired("powershell", 10),
+            ):
+                assert count_physical_cpus() == 1
+
+            # Test ValueError when converting invalid output
+            with mock.patch(
+                "subprocess.run", return_value=mock.Mock(returncode=0, stdout="invalid")
+            ):
                 assert count_physical_cpus() == 1
 
     def test_count_physical_cpus_linux(self):

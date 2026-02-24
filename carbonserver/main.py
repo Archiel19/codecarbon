@@ -1,10 +1,10 @@
 import os
 
-import logfire
 from fastapi import FastAPI
 from fastapi_pagination import add_pagination
 from pydantic import ValidationError
 from starlette.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
@@ -20,6 +20,7 @@ from carbonserver.api.routers import (
     runs,
     users,
 )
+from carbonserver.api.services import auth_service
 from carbonserver.config import settings
 from carbonserver.container import ServerContainer
 from carbonserver.database.database import engine
@@ -53,6 +54,7 @@ def create_app() -> FastAPI:
     server.add_exception_handler(DBException, db_exception_handler)
     server.add_exception_handler(ValidationError, validation_exception_handler)
     server.add_exception_handler(Exception, generic_exception_handler)
+    server.add_middleware(SessionMiddleware, secret_key="some-random-string")
 
     return server
 
@@ -69,6 +71,7 @@ def init_container():
             organizations,
             users,
             authenticate,
+            auth_service,
         ]
     )
     return container
@@ -81,9 +84,6 @@ def init_db(container):
 
 
 def init_server(container):
-    logfire.configure(
-        token=settings.logfire_token, send_to_logfire=settings.send_to_logfire
-    )
     server = FastAPI(
         servers=[
             {"url": "/api/"},
@@ -91,7 +91,6 @@ def init_server(container):
         port=settings.api_port,
         host=settings.server_host,
     )
-    logfire.instrument_fastapi(server)
 
     server.container = container
     server.include_router(users.router)

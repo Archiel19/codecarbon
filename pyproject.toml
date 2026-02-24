@@ -1,12 +1,12 @@
 [build-system]
-requires = ["setuptools>=61", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "codecarbon"
 dynamic = ["version"]
 readme = "README.md"
-requires-python = ">=3.7"
+requires-python = ">=3.8"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [
@@ -18,7 +18,6 @@ authors = [
 ]
 classifiers = [
     "Natural Language :: English",
-    "Programming Language :: Python :: 3.7",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
@@ -29,8 +28,8 @@ classifiers = [
 ]
 dependencies = [
     "arrow",
+    "authlib>=1.2.1",
     "click",
-    "fief-client[cli]",
     "pandas>=2.3.3;python_version>='3.14'",
     "pandas;python_version<'3.14'",
     "prometheus_client",
@@ -42,7 +41,7 @@ dependencies = [
     "requests",
     "questionary",
     "rich",
-    "typer"
+    "typer",
 ]
 
 [tool.setuptools.dynamic]
@@ -79,38 +78,9 @@ Changelog = "https://github.com/mlco2/codecarbon/releases"
 
 
 [dependency-groups]
-dev = [
-    "taskipy",
-    "bumpver",
-    "pre-commit",
-    "ruff",
-    "black",
-    "mypy",
-    "pytest",
-    "requests",
-    "requests-mock",
-    "responses",
-    "logfire>=1.0.1",
-]
-doc = [
-  "sphinx",
-  "sphinx_rtd_theme",
-]
-
-[project.optional-dependencies]
-carbonboard = [
-    "dash",
-    "dash_bootstrap_components > 1.0.0",
-    "fire",
-]
-# Backwards compatibility alias - will be removed in v4.0.0
-viz-legacy = [
-    "dash",
-    "dash_bootstrap_components > 1.0.0",
-    "fire",
-]
 api  = [
     "alembic<2.0.0",
+    "authlib>=1.2.1",
     "bcrypt<5.0.0",
     "python-dateutil<3.0.0",
     "dependency-injector<5.0.0",
@@ -126,13 +96,74 @@ api  = [
     "pytest",
     "mock",
     "responses",
+    "fastapi-oidc;python_version>='3.10'",
     "numpy",
     "psutil",
     "requests-mock",
     "rapidfuzz",
     "PyJWT",
     "logfire[fastapi]>=1.0.1",
+    "itsdangerous",
 ]
+dev = [
+    "taskipy",
+    "bumpver",
+    "pre-commit",
+    "ruff",
+    "black",
+    "mypy",
+    "pytest",
+    "requests",
+    "requests-mock",
+    "responses",
+    "pytest-cov",
+    "logfire>=1.0.1",  # For testing Logfire output method
+]
+doc = [
+  "sphinx",
+  "sphinx_rtd_theme>=3.1.0",
+]
+
+[project.optional-dependencies]
+carbonboard = [
+    "dash",
+    "dash_bootstrap_components > 1.0.0",
+    "fire",
+]
+# Backwards compatibility alias - will be removed in v4.0.0
+viz-legacy = [
+    "dash",
+    "dash_bootstrap_components > 1.0.0",
+    "fire",
+]
+
+api  = [
+    "alembic<2.0.0",
+    "authlib>=1.2.1",
+    "bcrypt<5.0.0",
+    "python-dateutil<3.0.0",
+    "dependency-injector<5.0.0",
+    "fastapi<1.0.0",
+    "fief-client[fastapi]",
+    "httpx",
+    "itsdangerous",
+    "pydantic[email]<2.0.0",
+    "psycopg2-binary<3.0.0",
+    "requests<3.0.0",
+    "sqlalchemy<2.0.0",
+    "uvicorn[standard]<1.0.0",
+    "fastapi-pagination<1.0.0",
+    "pytest",
+    "mock",
+    "responses",
+    "fastapi-oidc;python_version>='3.10'",
+    "numpy",
+    "psutil",
+    "requests-mock",
+    "rapidfuzz",
+    "PyJWT",
+]
+
 
 [project.scripts]
 carbonboard = "codecarbon.viz.carbonboard:main"
@@ -143,7 +174,7 @@ pre-commit-install = { cmd = "pre-commit install", help = "Install pre-commit ho
 dashboard = "cd carbonserver && uvicorn main:app --reload"
 dashboard-ci = "cd carbonserver && uvicorn main:app --host 0.0.0.0 --port 8008"
 docker = "docker-compose up -d"
-test-api-unit = "cd carbonserver && python -m pytest -vv tests/api/routers/test_projects.py && python -m pytest -vv tests/api/service/ && python -m pytest -vv tests/api/usecase/"
+test-api-unit = "cd carbonserver && python -m pytest -vv tests/api/routers && python -m pytest -vv tests/api/service/ && python -m pytest -vv tests/api/usecase/"
 test-api-integ = "cd carbonserver && python -m pytest -vv tests/api/integration/"
 setup-db = "cd carbonserver && python3 -m alembic -c carbonserver/database/alembic.ini upgrade head"
 downgrade-db = "cd carbonserver && python -m alembic -c carbonserver/database/alembic.ini downgrade base"
@@ -155,12 +186,13 @@ mypy-check = "mypy -m codecarbon --ignore-missing-imports --no-strict-optional -
 lint = "black --check --diff . && ruff check . && mypy ."
 format = "black . && ruff check --fix --exit-non-zero-on-fix ."
 test-package = "CODECARBON_ALLOW_MULTIPLE_RUNS=True pytest --ignore=tests/test_viz_data.py -vv -m 'not integ_test' tests/"
+test-coverage = "CODECARBON_ALLOW_MULTIPLE_RUNS=True pytest --cov --cov-report=xml --ignore=tests/test_viz_data.py -vv -m 'not integ_test' tests/"
 test-package-integ = "CODECARBON_ALLOW_MULTIPLE_RUNS=True python -m pytest -vv tests/"
 docs = "cd docs/edit && make docs"
 carbonboard = "python codecarbon/viz/carbonboard.py"
 
 [tool.bumpver]
-current_version = "3.2.0"
+current_version = "3.2.3"
 version_pattern = "MAJOR.MINOR.PATCH[_TAGNUM]"
 
 [tool.bumpver.file_patterns]
@@ -173,3 +205,11 @@ version_pattern = "MAJOR.MINOR.PATCH[_TAGNUM]"
 
 [tool.pytest.ini_options]
 pythonpath = "."
+
+[tool.coverage.run]
+source = [
+    "codecarbon",
+]
+omit = [
+    "codecarbon/viz/*",
+]

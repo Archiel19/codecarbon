@@ -6,6 +6,14 @@ on:
   pull_request:
     paths:
       - "codecarbon/**"
+      - "test/**"
+      - "pyproject.toml"
+      - "uv.lock"
+  push:
+    branches: [master]
+    paths:
+      - "codecarbon/**"
+      - "test/**"
       - "pyproject.toml"
       - "uv.lock"
 
@@ -26,7 +34,12 @@ jobs:
     - name: Install dependencies
       run: uv sync --python ${{ matrix.python-version }}
     - name: Test package
-      run: uv run --python ${{ matrix.python-version }} task test-package
+      run: uv run --python ${{ matrix.python-version }} task test-coverage
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de # v5
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+
     - name: Install carbonboard dependencies
       run: uv pip install --python ${{ matrix.python-version }} dash 'dash_bootstrap_components>1.0.0' fire
     - name: Test carbonboard visualization

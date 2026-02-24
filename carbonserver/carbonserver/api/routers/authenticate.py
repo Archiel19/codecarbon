@@ -1,14 +1,16 @@
 import base64
+import json
 import logging
-import random
 from typing import Optional
 
-import requests
+from authlib.integrations.starlette_client import OAuthError
 from dependency_injector.wiring import Provide, inject
-from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import RedirectResponse
-from fief_client import FiefAsync
 
+from carbonserver.api.services.auth_providers.oidc_auth_provider import (
+    OIDCAuthProvider,
+)
 from carbonserver.api.services.auth_service import (
     OptionalUserWithAuthDependency,
     UserWithAuthDependency,
@@ -23,10 +25,6 @@ OAUTH_SCOPES = ["openid", "email", "profile"]
 SESSION_COOKIE_NAME = "user_session"
 
 router = APIRouter()
-
-fief = FiefAsync(
-    settings.fief_url, settings.fief_client_id, settings.fief_client_secret
-)
 
 
 @router.get("/auth/check", name="auth-check")
@@ -44,9 +42,19 @@ def check_login(
 
 
 @router.get("/auth/auth-callback", name="auth_callback")
-async def auth_callback(request: Request, response: Response, code: str = Query(...)):
+@inject
+async def auth_callback(
+    request: Request,
+    response: Response,
+    code: str = Query(...),
+    auth_provider: Optional[OIDCAuthProvider] = Depends(
+        Provide[ServerContainer.auth_provider]
+    ),
+):
+    if auth_provider is None:
+        raise HTTPException(status_code=501, detail="Authentication not configured")
     redirect_uri = request.url_for("auth_callback")
-    tokens, _ = await fief.auth_callback(code, redirect_uri)
+    tokens, _ = await auth_provider.handle_auth_callback(code, str(redirect_uri))
     response = RedirectResponse(request.url_for("auth-user"))
     response.set_cookie(
         SESSION_COOKIE_NAME,
@@ -65,63 +73,72 @@ async def get_login(
     state: Optional[str] = None,
     code: Optional[str] = None,
     sign_up_service: SignUpService = Depends(Provide[ServerContainer.sign_up_service]),
+    auth_provider: Optional[OIDCAuthProvider] = Depends(
+        Provide[ServerContainer.auth_provider]
+    ),
 ):
     """
     login and redirect to frontend app with token
     """
+    if auth_provider is None:
+        raise HTTPException(status_code=501, detail="Authentication not configured")
     login_url = request.url_for("login")
-
     if code:
-        res = requests.post(
-            f"{settings.fief_url}/api/token",
-            data={
-                "grant_type": "authorization_code",
-                "code": code,
-                "redirect_uri": login_url,
-                "client_id": settings.fief_client_id,
-                "client_secret": settings.fief_client_secret,
-            },
-        )
+        try:
+            token = await auth_provider.client.authorize_access_token(request)
+        except OAuthError:
+            return "Error"
 
         # check if the user exists in local DB ; create if needed
-        if "id_token" not in res.json():
-            if "access_token" not in res.json():
+        if "id_token" not in token:
+            if "access_token" not in token:
                 return Response(content="Invalid code", status_code=400)
-            # get profile data from fief server if not present in response
-            id_token = requests.get(
-                settings.fief_url + "/api/userinfo",
-                headers={"Authorization": "Bearer " + res.json()["access_token"]},
-            ).json()
+            # get profile data from auth provider if not present in response
+            id_token = await auth_provider.get_user_info(token["access_token"])
             sign_up_service.check_jwt_user(id_token)
         else:
-            sign_up_service.check_jwt_user(res.json()["id_token"], create=True)
+            sign_up_service.check_jwt_user(token["id_token"], create=True)
+        user = token.get("userinfo")
+        if user:
+            request.session["user"] = dict(user)
 
-        creds = base64.b64encode(res.content).decode()
+        creds = base64.b64encode(json.dumps(token).encode()).decode()
         base_url = request.base_url
         if settings.frontend_url != "":
             base_url = settings.frontend_url + "/"
         url = f"{base_url}home?auth=true&creds={creds}"
-
-        # NOTE: RedirectResponse doesn't work with clevercloud
-        # response = RedirectResponse(url=url)
-        content = f"""<html>
-        <head>
-        <script>
-        window.location.href = "{url}";
-        </script>
-        </head>
-        </html>
-        """
-        response = Response(content=content)
+        response = auth_provider.create_redirect_response(url)
 
         response.set_cookie(
             SESSION_COOKIE_NAME,
-            res.json()["access_token"],
+            token["access_token"],
             httponly=True,
             secure=True,
         )
         return response
+    return await auth_provider.get_authorize_url(request, str(login_url))
 
-    state = str(int(random.random() * 1000))
-    url = f"{settings.fief_url}/authorize?response_type=code&client_id={settings.fief_client_id}&redirect_uri={login_url}&scope={' '.join(OAUTH_SCOPES)}&state={state}"
-    return RedirectResponse(url=url)
+
+@router.get("/auth/logout", name="logout")
+@inject
+async def logout(
+    request: Request,
+    response: Response,
+    auth_user: UserWithAuthDependency = Depends(UserWithAuthDependency),
+    auth_provider: Optional[OIDCAuthProvider] = Depends(
+        Provide[ServerContainer.auth_provider]
+    ),
+):
+    """
+    Logout user by clearing session and removing cookie
+    """
+    if auth_provider is None:
+        raise HTTPException(status_code=501, detail="Authentication not configured")
+    base_url = request.base_url
+    response = auth_provider.create_redirect_response(str(base_url))
+    response.delete_cookie(SESSION_COOKIE_NAME)
+    if hasattr(request, "session"):
+        request.session.clear()
+
+    # TODO: also revoke the token at auth provider level if possible
+    return response

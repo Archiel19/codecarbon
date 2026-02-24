@@ -50,6 +50,10 @@ class EmissionsData:
     latitude: float
     ram_total_size: float
     tracking_mode: str
+    cpu_utilization_percent: float = 0.0
+    gpu_utilization_percent: float = 0.0
+    ram_utilization_percent: float = 0.0
+    ram_used_gb: float = 0.0
     on_cloud: str = "N"
     pue: float = 1
     wue: float = 0
@@ -111,6 +115,10 @@ class TaskEmissionsData:
     latitude: float
     ram_total_size: float
     tracking_mode: str
+    cpu_utilization_percent: float = 0.0
+    gpu_utilization_percent: float = 0.0
+    ram_utilization_percent: float = 0.0
+    ram_used_gb: float = 0.0
     on_cloud: str = "N"
 
     @property

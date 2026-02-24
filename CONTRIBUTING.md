@@ -18,8 +18,9 @@
    * [Debug in VS Code](#debug-in-vs-code)
    * [Coding style && Linting](#coding-style-linting)
    * [Dependencies management](#dependencies-management)
-   * [<a name="documentation"></a>Build Documentation 🖨️](#build-documentation-)
+   * [Build Documentation 🖨️](#build-documentation)
    * [Release process](#release-process)
+      + [Test the build in Docker](#test-the-build-in-docker)
 - [API and Dashboard](#api-and-dashboard)
    * [CSV Dashboard](#csv-dashboard)
    * [Web dashboard](#web-dashboard)
@@ -70,7 +71,7 @@ You have a cool idea, but do not know know if it fits with Code Carbon? You can 
 <!-- TOC --><a name="installation"></a>
 ### Installation
 
-CodeCarbon is a Python package, to contribute to it, you need to have Python installed on your machine, natively or with [Conda](https://docs.conda.io/projects/conda/en/latest/user-guide/install/), or better, faster, stronger with [UV](https://github.com/astral-sh/uv).
+CodeCarbon is a Python package, to contribute to it, you need to have Python installed on your machine, natively or with [UV](https://github.com/astral-sh/uv).
 
 Between April 2024 and July 2025 we use Hatch for managing development environment. Since August 2025 we use UV manages the environments, Python versions, and dependencies - it's a fast, reliable way to work with Python projects.
 
@@ -114,6 +115,12 @@ You can run the unit tests by running UV in the terminal when in the root packag
 
 ```sh
 uv run task test-package
+```
+
+Run a specific test file:
+
+```sh
+uv run python -m pytest tests/test_cpu.py
 ```
 
 You can also run a specific test:
@@ -258,11 +265,10 @@ Dependencies are defined in different places:
 
 -   In [pyproject.toml](pyproject.toml#L28), those are all the dependencies.
 -   In [uv.lock](uv.lock), those are the locked dependencies managed by UV, do not edit them.
--   In [.conda/meta.yaml](.conda/meta.yaml#L21), those are the dependencies for the Conda pacakge targeting Python 3.7 and higher versions.
 
 
-<!-- TOC --><a name="build-documentation-"></a>
-### <a name="documentation"></a>Build Documentation 🖨️
+<!-- TOC --><a name="build-documentation"></a>
+### Build Documentation 🖨️
 
 No software is complete without great documentation!
 To make generating documentation easier, we use [`sphinx` package](https://www.sphinx-doc.org/en/master/usage/installation.html#installation-from-pypi).
@@ -274,6 +280,31 @@ uv run --only-group doc task docs
 ```
 
 to regenerate the html files.
+
+### Rebase your branch on master 
+
+Before creating a PR, please make sure to rebase your branch on master to avoid merge conflicts and make the review easier. You can do it with the following command:
+```sh
+# Be careful, this command will delete every local changes you have, make sure to commit or stash them before running it
+TARGET_BRANCH=master
+current_branch=$(git symbolic-ref --short HEAD)
+git switch $TARGET_BRANCH && git pull
+git switch $current_branch --force && git fetch origin $TARGET_BRANCH
+git rebase $TARGET_BRANCH
+```
+
+In case of a conflict during a rebase, "incoming" refers to your branch, and "current" refers to master. This is because the commits from your branch are being applied to master, so they are incoming. In case of a merge, it's the opposite!
+
+Check if everything is fine:
+
+```sh
+git status
+```
+
+Push force
+```sh
+git push --force-with-lease
+```
 
 <!-- TOC --><a name="release-process"></a>
 ### Release process
@@ -288,21 +319,8 @@ to regenerate the html files.
 - Wait for the Github Action `ReleaseDrafter` to finish running on the merge commit.
 - [Edit the Draft release](https://github.com/mlco2/codecarbon/releases/) on Github and give it a tag, `v1.0.0` for the version 1.0.0. Github will automatically create a Git tag for it. Complete help [here](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository).
 -   A [Github Action](https://github.com/mlco2/codecarbon/actions) _Upload Python Package_ will be run automaticaly to upload the package.
--   For conda, we now have a [feedstock](https://github.com/conda-forge/codecarbon-feedstock/pulls) to publish to Conda-Forge channel.
 
-If you still want to publish to the Anaconda CodeCarbon channel:
-
-Start a Docker image in the same directory and bind-mount the current directory with:
-
-`docker run -ti --rm=true -v $PWD:/data continuumio/anaconda3`.
-
-Inside the docker container, run:
-
--   `conda install -y conda-build conda-verify`
--   `cd /data && mkdir -p /conda_dist`
--   `conda build --python 3.11 .conda/ -c conda-forge --output-folder /conda_dist`
--   `anaconda upload --user codecarbon /conda_dist/noarch/codecarbon-*.tar.bz2`
-
+<!-- TOC --><a name="test-the-build-in-docker"></a>
 #### Test the build in Docker
 
 If you want to check the build is working, you could run:
@@ -392,7 +410,7 @@ api_endpoint = http://localhost:8008
 Before using it, you need an experiment_id, to get one, run:
 
 ```
-codecarbon init
+codecarbon login
 ```
 
 It will ask the API for an experiment_id on the default project and save it to `.codecarbon.config` for you.
