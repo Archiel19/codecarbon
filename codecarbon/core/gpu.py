@@ -52,9 +52,16 @@ class GPUDevice:
         Compute the energy/power used since last call.
         """
         new_last_energy = energy = self._get_energy_kwh()
-        self.power = self.power.from_energies_and_delay(
-            energy, self.last_energy, duration
-        )
+        if new_last_energy == self.last_energy:
+            # Error while reading energy
+            self.power = Power.from_milli_watts(self._get_power_usage())
+            new_last_energy = energy = Energy.from_power_and_time(
+                power=self.power, time=duration
+            )
+        else:
+            self.power = self.power.from_energies_and_delay(
+                energy, self.last_energy, duration
+            )
         self.energy_delta = energy - self.last_energy
         self.last_energy = new_last_energy
         return {
@@ -116,9 +123,9 @@ class GPUDevice:
         try:
             return pynvml.nvmlDeviceGetTotalEnergyConsumption(self.handle)
         except pynvml.NVMLError:
-            logger.warning(
-                "Failed to retrieve gpu total energy consumption", exc_info=True
-            )
+            # logger.warning(
+            #     "Failed to retrieve gpu total energy consumption", exc_info=True
+            # )
             return None
 
     def _get_gpu_name(self) -> Any:
