@@ -895,7 +895,7 @@ class BaseEmissionsTracker(ABC):
         per_gpu_energy = [e.kWh for e in self._per_gpu_energy]
         
         total_emissions = EmissionsData(
-            timestamp=datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+            timestamp=datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%f"),
             project_name=self._project_name,
             run_id=str(self.run_id),
             experiment_id=str(self._experiment_id),
