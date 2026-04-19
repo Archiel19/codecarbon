@@ -165,7 +165,10 @@ class GPUDevice:
         """Returns intended fan speed as a percentage of maximum noise tolerance fan speed
         https://docs.nvidia.com/deploy/nvml-api/group__nvmlDeviceQueries.html#group__nvmlDeviceQueries_1ge8e3e5b5b9dcf436e4537982cf647d4e
         """
-        return pynvml.nvmlDeviceGetFanSpeed(self.handle)
+        try:
+            return pynvml.nvmlDeviceGetFanSpeed(self.handle)
+        except pynvml.NVMLError_NotSupported:
+            return 0
 
     def _get_power_usage(self) -> int:
         """Returns power usage in milliwatts
