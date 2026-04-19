@@ -632,9 +632,6 @@ class BaseEmissionsTracker(ABC):
         if self._scheduler_monitor_power:
             self._scheduler_monitor_power.stop()
             
-        if self._scheduler_monitor_lock.locked():
-            self._scheduler_monitor_lock.release()
-
         task_name = task_name if task_name else self._active_task
         if self._tasks.get(task_name) is None:
             logger.warning("stop_task : No active task to stop.")
@@ -749,9 +746,6 @@ class BaseEmissionsTracker(ABC):
             self._scheduler_monitor_power = None
         else:
             logger.warning("Tracker already stopped !")
-        
-        if self._scheduler_monitor_lock.locked():
-            self._scheduler_monitor_lock.release()
         
         for task_name in self._tasks:
             if self._tasks[task_name].is_active:
