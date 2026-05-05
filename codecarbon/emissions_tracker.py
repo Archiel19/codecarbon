@@ -404,6 +404,7 @@ class BaseEmissionsTracker(ABC):
             "gpu_utilization": [[] for _ in range(gpu_count)],
             "fan_percent": [[] for _ in range(gpu_count)],
             "temperature": [[] for _ in range(gpu_count)],
+            "power_limit": [[] for _ in range(gpu_count)],
             "used_memory": [[] for _ in range(gpu_count)],
         }
 
@@ -884,6 +885,7 @@ class BaseEmissionsTracker(ABC):
             per_gpu_utilization_percent = [agg_func(lst) for lst in self._gpu_details_history["gpu_utilization"]] 
             per_gpu_temperature = [agg_func(lst) for lst in self._gpu_details_history["temperature"]]
             per_gpu_fan_percent = [agg_func(lst) for lst in self._gpu_details_history["fan_percent"]]
+            per_gpu_power_limit = [agg_func(lst) for lst in self._gpu_details_history["power_limit"]]
             per_gpu_vram_used_gb = [agg_func(lst) for lst in self._gpu_details_history["used_memory"]]
 
         per_gpu_energy = [e.kWh for e in self._per_gpu_energy]
@@ -907,6 +909,7 @@ class BaseEmissionsTracker(ABC):
             per_gpu_utilization_percent=per_gpu_utilization_percent,
             per_gpu_vram_used_gb=per_gpu_vram_used_gb,
             per_gpu_fan_percent=per_gpu_fan_percent,
+            per_gpu_power_limit=per_gpu_power_limit,
             per_gpu_temperature=per_gpu_temperature,
             cpu_energy=self._total_cpu_energy.kWh,
             gpu_energy=self._total_gpu_energy.kWh,
@@ -987,7 +990,7 @@ class BaseEmissionsTracker(ABC):
                 elif isinstance(hardware, GPU):
                     gpu_details = hardware.devices.get_gpu_details()
                     for gpu_i, gpu_detail in enumerate(gpu_details):
-                        for key in ("gpu_utilization", "temperature", "fan_percent"):
+                        for key in ("gpu_utilization", "temperature", "fan_percent", "power_limit"):
                             self._gpu_details_history[key][gpu_i].append(gpu_detail[key])
                         self._gpu_details_history["used_memory"][gpu_i].append(gpu_detail["used_memory"] / GB_TO_B)
         

@@ -47,6 +47,7 @@ class EmissionsData:
     per_gpu_vram_used_gb: List[float]
     per_gpu_temperature: List[float]
     per_gpu_fan_percent: List[float]
+    per_gpu_power_limit: List[float]
     cpu_utilization_percent: float = 0.0
     ram_utilization_percent: float = 0.0
     ram_used_gb: float = 0.0
@@ -117,6 +118,7 @@ class TaskEmissionsData:
     per_gpu_vram_used_gb: List[float]
     per_gpu_temperature: List[float]
     per_gpu_fan_percent: List[float]
+    per_gpu_power_limit: List[float]
     cpu_utilization_percent: float = 0.0
     ram_utilization_percent: float = 0.0
     ram_used_gb: float = 0.0
