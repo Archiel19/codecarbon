@@ -101,7 +101,7 @@ class GPUDevice:
             "temperature": self._get_temperature(),
             "fan_percent": self._get_fan_percent(),
             "power_usage": self._get_power_usage(),
-            "power_limit": self._power_limit,
+            "power_limit": self._get_power_limit(),
             "total_energy_consumption": self._get_total_energy_consumption(),
             "gpu_utilization": self._get_gpu_utilization(),
             "compute_mode": self._get_compute_mode(),
