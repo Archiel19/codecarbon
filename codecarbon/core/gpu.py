@@ -53,17 +53,21 @@ class GPUDevice:
         """
         new_last_energy = energy = self._get_energy_kwh()
         if new_last_energy == self.last_energy:
-            # Error while reading energy
-            self.power = Power.from_milli_watts(self._get_power_usage())
+            # Error while reading energy: old GPU or actual error
+            new_power = self.power.from_milli_watts(self._get_power_usage())
             new_last_energy = energy = Energy.from_power_and_time(
                 power=self.power, time=duration
             )
         else:
-            self.power = self.power.from_energies_and_delay(
+            new_power = self.power.from_energies_and_delay(
                 energy, self.last_energy, duration
             )
-        self.energy_delta = energy - self.last_energy
-        self.last_energy = new_last_energy
+            
+        # If the updated values do not make sense, it really was an error
+        if self.last_energy.kWh < energy.kWh and abs(self.power.W - new_power.W) < 1e4:
+            self.power = new_power
+            self.energy_delta = energy - self.last_energy
+            self.last_energy = new_last_energy
         return {
             "name": self._gpu_name,
             "uuid": self._uuid,
