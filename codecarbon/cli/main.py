@@ -19,7 +19,7 @@ from codecarbon.cli.cli_utils import (
     create_new_config_file,
     get_api_endpoint,
     get_config,
-    get_existing_local_exp_id,
+    get_existing_exp_id,
     overwrite_local_config,
 )
 from codecarbon.cli.monitor import run_and_monitor
@@ -71,13 +71,13 @@ def version(
 
 def show_config(path: Path = Path("./.codecarbon.config")) -> None:
     d = get_config(path)
-    api_endpoint = get_api_endpoint(path)
-    api = ApiClient(endpoint_url=api_endpoint)
-    api.set_access_token(get_access_token())
     print("Current configuration : \n")
     print("Config file content : ")
     print(d)
     try:
+        api_endpoint = get_api_endpoint(path)
+        api = ApiClient(endpoint_url=api_endpoint)
+        api.set_access_token(get_access_token())
         if "organization_id" not in d:
             print(
                 "No organization_id in config, follow setup instruction to complete your configuration file!",
@@ -104,8 +104,8 @@ def show_config(path: Path = Path("./.codecarbon.config")) -> None:
                     print("\nOrganization :")
                     print(org)
     except Exception as e:
-        raise ValueError(
-            f"Your configuration is invalid, please verify your configuration file at {path}. To start from scratch, run `codecarbon config` and overwrite your configuration file. (error: {e})"
+        print(
+            f"[yellow]Could not validate remote configuration details[/yellow]. You can continue with local configuration setup. (error: {e})"
         )
 
 
@@ -116,7 +116,8 @@ def api_get():
     """
     ex: test-api
     """
-    api = ApiClient(endpoint_url=API_URL)  # TODO: get endpoint from config
+    api_endpoint = get_api_endpoint()
+    api = ApiClient(endpoint_url=api_endpoint)
     api.set_access_token(get_access_token())
     organizations = api.get_list_organizations()
     print(organizations)
@@ -125,15 +126,18 @@ def api_get():
 @codecarbon.command("login", short_help="Login to CodeCarbon")
 def login():
     authorize()
-    api = ApiClient(endpoint_url=API_URL)  # TODO: get endpoint from config
+    api_endpoint = get_api_endpoint()
+    api = ApiClient(endpoint_url=api_endpoint)
     access_token = get_access_token()
     api.set_access_token(access_token)
     api.check_auth()
 
 
 def get_api_key(project_id: str):
+    api_endpoint = get_api_endpoint()
+    api_endpoint = api_endpoint.rstrip("/")
     req = requests.post(
-        f"{API_URL}/projects/{project_id}/api-tokens",
+        f"{api_endpoint}/projects/{project_id}/api-tokens",
         json={
             "project_id": project_id,
             "name": "api token",
@@ -308,7 +312,7 @@ def config():
     overwrite_local_config("api_key", api_key, path=file_path)
     show_config(file_path)
     print(
-        "Consult [link=https://mlco2.github.io/codecarbon/usage.html#configuration]configuration documentation[/link] for more configuration options"
+        "Consult [link=https://docs.codecarbon.io/latest/how-to/configuration/]configuration documentation[/link] for more configuration options"
     )
 
 
@@ -320,20 +324,25 @@ def config():
 def monitor(
     ctx: typer.Context,
     measure_power_secs: Annotated[
-        int, typer.Option(help="Interval between two measures.")
+        int,
+        typer.Option(help="Interval between two measures."),
     ] = 10,
     api_call_interval: Annotated[
-        int, typer.Option(help="Number of measures between API calls.")
+        int,
+        typer.Option(help="Number of measures between API calls."),
     ] = 30,
     api: Annotated[
-        bool, typer.Option(help="Choose to call Code Carbon API or not")
+        bool,
+        typer.Option(help="Choose to call Code Carbon API or not"),
     ] = True,
     offline: Annotated[bool, typer.Option(help="Run in offline mode")] = False,
     country_iso_code: Annotated[
-        str, typer.Option(help="3-letter country ISO code for offline mode")
+        str,
+        typer.Option(help="3-letter country ISO code for offline mode"),
     ] = None,
     region: Annotated[
-        str, typer.Option(help="Region/province for offline mode")
+        str,
+        typer.Option(help="Region/province for offline mode"),
     ] = None,
 ):
     """Monitor your machine's carbon emissions."""
@@ -347,7 +356,8 @@ def monitor(
     if offline:
         if not country_iso_code:
             print(
-                "ERROR: country_iso_code is required for offline mode", file=sys.stderr
+                "ERROR: Country ISO code is required for offline mode. Add it to your configuration or provide it via the command line: `--country-iso-code FRA`",
+                file=sys.stderr,
             )
             raise typer.Exit(1)
 
@@ -357,10 +367,10 @@ def monitor(
             "region": region,
         }
     else:
-        experiment_id = get_existing_local_exp_id()
+        experiment_id = get_existing_exp_id()
         if api and experiment_id is None:
             print(
-                "ERROR: No experiment id, call 'codecarbon config' first.",
+                "ERROR: No experiment id. Set CODECARBON_EXPERIMENT_ID, call 'codecarbon config' first, or run in offline mode with `--offline --country-iso-code FRA`.",
                 file=sys.stderr,
             )
             raise typer.Exit(1)
@@ -369,7 +379,7 @@ def monitor(
 
     # If extra args are provided (e.g. `codecarbon monitor -- my_script.py`), delegate to `run_and_monitor`
     if getattr(ctx, "args", None):
-        return run_and_monitor(ctx, **tracker_args)
+        return run_and_monitor(ctx, offline=offline, **tracker_args)
 
     # Instantiate the tracker
     if offline:

@@ -2,7 +2,10 @@
 Provides functionality for persistence of data
 """
 
-from codecarbon.output_methods.base_output import BaseOutput  # noqa: F401
+from codecarbon.output_methods.base_output import BaseOutput, OutputMethod  # noqa: F401
+
+# Output to BoAmps format
+from codecarbon.output_methods.boamps import BoAmpsOutput  # noqa: F401
 
 # emissions data
 from codecarbon.output_methods.emissions_data import (  # noqa: F401

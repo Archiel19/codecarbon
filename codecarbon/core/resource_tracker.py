@@ -2,8 +2,14 @@ from collections import Counter
 from typing import List, Union
 
 from codecarbon.core import cpu, gpu, powermetrics
-from codecarbon.core.config import parse_gpu_ids
-from codecarbon.core.util import detect_cpu_model, is_linux_os, is_mac_os, is_windows_os
+from codecarbon.core.config import normalize_gpu_ids
+from codecarbon.core.util import (
+    detect_cpu_model,
+    is_linux_os,
+    is_mac_arm,
+    is_mac_os,
+    is_windows_os,
+)
 from codecarbon.external.hardware import GB_TO_B, CPU, GPU, MODE_CPU_LOAD, AppleSiliconChip
 from codecarbon.external.logger import logger
 from codecarbon.external.ram import RAM
@@ -100,7 +106,7 @@ class ResourceTracker:
         """Get CPU tracking installation instructions for the current OS."""
         if is_mac_os():
             cpu_model = detect_cpu_model()
-            if "M1" in cpu_model or "M2" in cpu_model or "M3" in cpu_model:
+            if cpu_model and is_mac_arm(cpu_model):
                 return "Mac OS and ARM processor detected: Please enable PowerMetrics sudo to measure CPU"
             else:
                 return "Mac OS detected: Please install Intel Power Gadget or enable PowerMetrics sudo to measure CPU"
@@ -216,14 +222,20 @@ class ResourceTracker:
 
     def set_GPU_tracking(self):
         logger.info("[setup] GPU Tracking...")
-        if self.tracker._gpu_ids:
-            self.tracker._gpu_ids = parse_gpu_ids(self.tracker._gpu_ids)
-            if self.tracker._gpu_ids:
-                self.tracker._conf["gpu_ids"] = self.tracker._gpu_ids
-                self.tracker._conf["gpu_count"] = len(self.tracker._gpu_ids)
+        self.tracker._gpu_ids = normalize_gpu_ids(self.tracker._gpu_ids)
+        self.tracker._conf["gpu_ids"] = self.tracker._gpu_ids
+        if self.tracker._gpu_ids is not None:
+            self.tracker._conf["gpu_count"] = len(self.tracker._gpu_ids)
 
-        if gpu.is_gpu_details_available():
-            logger.info("Tracking Nvidia GPU via pynvml")
+        is_nvidia = gpu.is_nvidia_system()
+        is_rocm = gpu.is_rocm_system()
+        if is_nvidia or is_rocm:
+            if is_nvidia:
+                logger.info("Tracking Nvidia GPUs via PyNVML")
+                self.gpu_tracker = "pynvml"
+            else:
+                logger.info("Tracking AMD GPUs via AMDSMI")
+                self.gpu_tracker = "amdsmi"
             gpu_devices = GPU.from_utils(self.tracker._gpu_ids)
             self.tracker._hardware.append(gpu_devices)
             gpu_names = []
@@ -235,16 +247,17 @@ class ResourceTracker:
             self.tracker._conf["gpu_model"] = ", ".join(
                 [f"{i} x {name}" for name, i in gpu_names_dict.items()]
             )
-            if self.tracker._conf.get("gpu_count") is None:
+            if not self.tracker._conf.get("gpu_count"):
                 self.tracker._conf["gpu_count"] = len(
                     gpu_devices.devices.get_gpu_static_info()
                 )
             self.tracker._conf["gpu_vram"] = ", ".join(
                 [f"GPU-{i}: {mem:.3f} GB" for i, mem in enumerate(gpu_vrams)]
             )
-            self.gpu_tracker = "pynvml"
         else:
             logger.info("No GPU found.")
+            self.tracker._conf.setdefault("gpu_count", 0)
+            self.tracker._conf.setdefault("gpu_model", "")
 
     def set_CPU_GPU_ram_tracking(self):
         """

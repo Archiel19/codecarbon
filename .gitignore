@@ -17,6 +17,7 @@ __pycache__/
 build/
 develop-eggs/
 dist/
+!webapp/dist/**
 downloads/
 eggs/
 .eggs/
@@ -103,6 +104,8 @@ venv.bak/
 
 # mkdocs documentation
 /site
+/deploy
+.deploy-docs-workdir/
 
 # mypy
 .mypy_cache/
@@ -132,3 +135,4 @@ tests/test_data/rapl/*
 # credentials
 credentials*
 .codecarbon.config*
+scripts/agent-vm.personal.config.sh

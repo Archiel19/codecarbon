@@ -17,7 +17,7 @@ from rapidfuzz import fuzz, process, utils
 
 from codecarbon.core.rapl import RAPLFile
 from codecarbon.core.units import Time
-from codecarbon.core.util import detect_cpu_model
+from codecarbon.core.util import count_cpus, detect_cpu_model
 from codecarbon.external.logger import logger
 from codecarbon.input import DataSource
 
@@ -217,19 +217,19 @@ def is_psutil_available():
                 return True
             else:
                 logger.debug(
-                    f"is_psutil_available(): psutil.cpu_times().nice is too small: {nice}"
+                    f"is_psutil_available(): psutil.cpu_times().nice is too small: {nice}; "
+                    "using fallback check."
                 )
-                return False
 
         else:
-            # Fallback: check if psutil works by calling cpu_percent
             logger.debug(
                 "is_psutil_available(): no 'nice' attribute, using fallback check."
             )
 
-            # check CPU utilization usable
-            psutil.cpu_percent(interval=0.0, percpu=False)
-            return True
+        # Fallback: check if psutil CPU utilization is usable. This covers
+        # platforms like Windows and macOS where cpu_times().nice is absent or 0.
+        psutil.cpu_percent(interval=0.0, percpu=False)
+        return True
 
     except Exception as e:
         logger.debug(
@@ -828,7 +828,8 @@ class IntelRAPL:
         """
         cpu_details = {}
         try:
-            list(map(lambda rapl_file: rapl_file.delta(duration), self._rapl_files))
+            for rapl_file in self._rapl_files:
+                rapl_file.delta(duration)
 
             for rapl_file in self._rapl_files:
                 logger.debug(rapl_file)
@@ -1001,7 +1002,7 @@ class TDP:
             )
             if is_psutil_available():
                 # Count thread of the CPU
-                threads = psutil.cpu_count(logical=True)
+                threads = count_cpus()
                 estimated_tdp = threads * DEFAULT_POWER_PER_CORE
                 logger.warning(
                     f"We will use the default power consumption of {DEFAULT_POWER_PER_CORE} W per thread for your {threads} CPU, so {estimated_tdp}W."

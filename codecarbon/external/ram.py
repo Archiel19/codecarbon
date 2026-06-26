@@ -24,7 +24,7 @@ class RAM(BaseHardware):
     In V3, we need to improve the accuracy of the RAM power estimation.
     Because the power consumption of RAM is not linear with the amount of memory used,
 
-    See https://mlco2.github.io/codecarbon/methodology.html#ram for details on the RAM
+    See https://docs.codecarbon.io/latest/explanation/methodology/#ram for details on the RAM
     power estimation methodology.
 
     """
@@ -304,13 +304,8 @@ class RAM(BaseHardware):
         Returns:
             float: RAM usage (GB)
         """
-        children_rss_mem, children_mem_percents = self._get_children_memories() if self._children else []
-        main_memory_rss = psutil.Process(self._pid).memory_info().rss
-        main_memory_percent = psutil.Process(self._pid).memory_percent('rss')
-        rss_memories = children_rss_mem + [main_memory_rss]
-        mem_percents = children_mem_percents + [main_memory_percent]
-        self._used_ram = sum([m for m in rss_memories if m] + [0]) / GB_TO_B
-        self._mem_percent = sum([m for m in mem_percents if m] + [0])
+        self._used_ram = psutil.Process(self._pid).memory_info().rss / GB_TO_B
+        self._mem_percent = psutil.Process(self._pid).memory_percent('rss')
         return self._used_ram, self._mem_percent
 
     @property
@@ -347,7 +342,7 @@ class RAM(BaseHardware):
             used_memory_GB = (
                 self.machine_memory_GB
                 if self._tracking_mode == "machine"
-                else self.process_memory_GB[0] # Used, not available
+                else self.process_memory_GB[0]
             )
             ram_power = Power.from_watts(self._calculate_ram_power(machine_memory_GB, used_memory_GB))
             logger.debug(
@@ -360,13 +355,17 @@ class RAM(BaseHardware):
         return ram_power
     
     def extra_data(self) -> float:
-        # Returns Used and Allocated RAM, in that order
         if self._tracking_mode == "machine":
-            used = psutil.virtual_memory().used / GB_TO_B
-            percent = psutil.virtual_memory().percent
+            # See https://psutil.readthedocs.io/stable/index.html#psutil.virtual_memory
+            mem_info = psutil.virtual_memory()
+            if 'active' in mem_info:  # Field available in UNIX
+                used = mem_info.active / GB_TO_B  # Memory that is actually in RAM
+            else:
+                used = mem_info.used / GB_TO_B  # "Memory used": platform-dependent definition
+            percent = mem_info.percent  # platform-dependent definition, on Linux it's virtual
         elif self._tracking_mode == "process":
             if self._used_ram is None:
-                used, percent = self.process_memory_GB()
+                used, percent = self.process_memory_GB
             else:
                 used, percent = self._used_ram, self._mem_percent
             self._used_ram, self._mem_percent = None, None

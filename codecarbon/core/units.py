@@ -66,6 +66,8 @@ class Energy:
 
     @classmethod
     def from_power_and_time(cls, *, power: "Power", time: "Time") -> "Energy":
+        if not isinstance(power.kW, float):
+            print(power.kW)
         assert isinstance(power.kW, float)
         assert isinstance(time.hours, float)
         energy = power.kW * time.hours

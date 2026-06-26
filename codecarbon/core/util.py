@@ -8,7 +8,6 @@ from os.path import expandvars
 from pathlib import Path
 from typing import Optional, Union
 
-import cpuinfo
 import psutil
 
 from codecarbon.external.logger import logger
@@ -76,6 +75,8 @@ def backup(file_path: Union[str, Path], ext: Optional[str] = ".bak") -> None:
 
 @lru_cache(maxsize=1)
 def detect_cpu_model() -> Optional[str]:
+    import cpuinfo
+
     cpu_info = cpuinfo.get_cpu_info()
     if cpu_info:
         cpu_model_detected = cpu_info.get("brand_raw", "")
@@ -86,6 +87,10 @@ def detect_cpu_model() -> Optional[str]:
 def is_mac_os() -> bool:
     system = sys.platform.lower()
     return system.startswith("dar")
+
+
+def is_mac_arm(cpu_model: str) -> bool:
+    return bool(re.search(r"\bM\d{1,2}\b", cpu_model))
 
 
 def is_windows_os() -> bool:
@@ -147,15 +152,15 @@ def count_cpus() -> int:
 
     try:
         logger.debug(
-            "SLURM environment detected for job {SLURM_JOB_ID}, running"
-            + " `scontrol show job $SLURM_JOB_ID` to count SLURM-available cpus."
+            f"SLURM environment detected for job {SLURM_JOB_ID}, running"
+            + f" `scontrol show job {SLURM_JOB_ID}` to count SLURM-available cpus."
         )
         scontrol = subprocess.check_output(
             [f"scontrol show job {SLURM_JOB_ID}"], shell=True
         ).decode()
     except subprocess.CalledProcessError:
         logger.warning(
-            "Error running `scontrol show job $SLURM_JOB_ID` "
+            f"Error running `scontrol show job {SLURM_JOB_ID}` "
             + "to count SLURM-available cpus. Using the machine's cpu count."
         )
         return psutil.cpu_count(logical=True)
@@ -164,18 +169,24 @@ def count_cpus() -> int:
 
     if len(num_cpus_matches) == 0:
         logger.warning(
-            "Could not find NumCPUs= after running `scontrol show job $SLURM_JOB_ID` "
+            f"Could not find NumCPUs= after running `scontrol show job {SLURM_JOB_ID}` "
             + "to count SLURM-available cpus. Using the machine's cpu count."
         )
         return psutil.cpu_count(logical=True)
 
     if len(num_cpus_matches) > 1:
         logger.warning(
-            "Unexpected output after running `scontrol show job $SLURM_JOB_ID` "
+            f"Unexpected output after running `scontrol show job {SLURM_JOB_ID}` "
             + "to count SLURM-available cpus. Using the machine's cpu count."
         )
         return psutil.cpu_count(logical=True)
 
     num_cpus = num_cpus_matches[0].replace("NumCPUs=", "")
     logger.debug(f"Detected {num_cpus} cpus available on SLURM.")
+
+    num_gpus_matches = re.findall(r"gres/gpu=\d+", scontrol)
+    if len(num_gpus_matches) > 0:
+        num_gpus = num_gpus_matches[0].replace("gres/gpu=", "")
+        logger.debug(f"Detected {num_gpus} gpus available on SLURM.")
+
     return int(num_cpus)

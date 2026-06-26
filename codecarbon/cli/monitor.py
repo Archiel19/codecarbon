@@ -8,14 +8,16 @@ import typer
 from rich import print
 from typing_extensions import Annotated
 
-from codecarbon.emissions_tracker import EmissionsTracker
+from codecarbon.emissions_tracker import EmissionsTracker, OfflineEmissionsTracker
 
 
 def run_and_monitor(
     ctx: typer.Context,
     log_level: Annotated[
-        str, typer.Option(help="Log level (critical, error, warning, info, debug)")
+        str,
+        typer.Option(help="Log level (critical, error, warning, info, debug)"),
     ] = "error",
+    offline: bool = False,
     **tracker_args,
 ):
     """
@@ -62,8 +64,8 @@ def run_and_monitor(
         )
         raise typer.Exit(1)
 
-    # Initialize tracker with specified logging level and shared args
-    tracker = EmissionsTracker(
+    tracker_cls = OfflineEmissionsTracker if offline else EmissionsTracker
+    tracker = tracker_cls(
         log_level=log_level,
         save_to_logger=False,
         tracking_mode="process",

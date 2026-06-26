@@ -1,24 +1,42 @@
 import { DateRangePicker } from "@/components/date-range-picker";
-import EmissionsTimeSeriesChart from "@/components/emissions-time-series";
-import ExperimentsBarChart from "@/components/experiment-bar-chart";
-import RadialChart from "@/components/radial-chart";
-import RunsScatterChart from "@/components/runs-scatter-chart";
 import { Separator } from "@/components/ui/separator";
 import { getDefaultDateRange } from "@/helpers/date-utils";
-import { ExperimentReport } from "@/types/experiment-report";
-import { Project } from "@/types/project";
-import { ConvertedValues, RadialChartData } from "@/types/project-dashboard";
-import Image from "next/image";
-import { ReactNode, useState } from "react";
+import {
+    ExperimentReport,
+    Project,
+    ConvertedValues,
+    RadialChartData,
+    Experiment,
+} from "@/api/schemas";
+import { lazy, ReactNode, Suspense, useState } from "react";
 import { DateRange } from "react-day-picker";
 import ChartSkeleton from "./chart-skeleton";
 import CreateExperimentModal from "./createExperimentModal";
 import { Button } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "./ui/select";
 import { Skeleton } from "./ui/skeleton";
-import { useRouter } from "next/navigation";
-import { Table, TableBody, TableHeader } from "./ui/table";
-import { Experiment } from "@/types/experiment";
+import { Copy } from "lucide-react";
+import { toast } from "sonner";
+
+// Sentinel value for the "show data from every experiment" option in the
+// experiment dropdown. Radix Select forbids an empty string as an item value.
+const ALL_EXPERIMENTS = "__all__";
+
+const RadialChart = lazy(() => import("@/components/radial-chart"));
+const ExperimentsBarChart = lazy(
+    () => import("@/components/experiment-bar-chart"),
+);
+const RunsScatterChart = lazy(() => import("@/components/runs-scatter-chart"));
+const EmissionsTimeSeriesChart = lazy(
+    () => import("@/components/emissions-time-series"),
+);
 
 export interface ProjectDashboardBaseProps {
     isPublicView: boolean;
@@ -38,6 +56,7 @@ export interface ProjectDashboardBaseProps {
     selectedRunId: string;
     onExperimentClick: (experimentId: string) => void;
     onRunClick: (runId: string) => void;
+    onExperimentCreated?: () => void;
     headerContent?: ReactNode;
     isLoading?: boolean;
 }
@@ -56,23 +75,36 @@ export default function ProjectDashboardBase({
     selectedRunId,
     onExperimentClick,
     onRunClick,
+    onExperimentCreated,
     headerContent,
     isLoading = false,
 }: ProjectDashboardBaseProps) {
-    const router = useRouter();
     const [isExperimentModalOpen, setIsExperimentModalOpen] = useState(false);
 
     const handleCreateExperimentClick = () => {
         setIsExperimentModalOpen(true);
     };
 
-    const refreshExperimentList = async () => {
-        router.refresh();
-    };
-
     const experimentName = experimentsReportData.find(
         (experiment) => experiment.experiment_id === selectedExperimentId,
     )?.name;
+
+    const selectedExperiment = projectExperiments.find(
+        (e) => e.id === selectedExperimentId,
+    );
+
+    const handleSelectExperiment = (value: string) => {
+        onExperimentClick(value === ALL_EXPERIMENTS ? "" : value);
+    };
+
+    const handleCopyExperimentId = async (id: string) => {
+        try {
+            await navigator.clipboard.writeText(id);
+            toast.success("Experiment id copied");
+        } catch {
+            toast.error("Failed to copy");
+        }
+    };
 
     return (
         <div className="flex flex-col gap-4">
@@ -108,7 +140,7 @@ export default function ProjectDashboardBase({
                         <>
                             <div className="grid grid-cols-3 gap-4">
                                 <div className="flex items-center justify-center">
-                                    <Image
+                                    <img
                                         src="/icons/household_consumption.svg"
                                         alt="Household consumption icon"
                                         width={64}
@@ -127,7 +159,7 @@ export default function ProjectDashboardBase({
                             </div>
                             <div className="grid grid-cols-3 gap-4">
                                 <div className="flex items-center justify-center">
-                                    <Image
+                                    <img
                                         src="/icons/transportation.svg"
                                         alt="Transportation icon"
                                         width={64}
@@ -146,7 +178,7 @@ export default function ProjectDashboardBase({
                             </div>
                             <div className="grid grid-cols-3 gap-4">
                                 <div className="flex items-center justify-center">
-                                    <Image
+                                    <img
                                         src="/icons/tv.svg"
                                         alt="TV icon"
                                         width={64}
@@ -174,7 +206,17 @@ export default function ProjectDashboardBase({
                             </CardContent>
                         </Card>
                     ) : (
-                        <RadialChart data={radialChartData.energy} />
+                        <Suspense
+                            fallback={
+                                <Card className="flex flex-col h-full items-center justify-center">
+                                    <CardContent className="p-0">
+                                        <Skeleton className="h-44 w-44 rounded-full" />
+                                    </CardContent>
+                                </Card>
+                            }
+                        >
+                            <RadialChart data={radialChartData.energy} />
+                        </Suspense>
                     )}
                 </div>
                 <div className="col-span-1 items-center justify-center w-full h-full">
@@ -185,7 +227,17 @@ export default function ProjectDashboardBase({
                             </CardContent>
                         </Card>
                     ) : (
-                        <RadialChart data={radialChartData.emissions} />
+                        <Suspense
+                            fallback={
+                                <Card className="flex flex-col h-full items-center justify-center">
+                                    <CardContent className="p-0">
+                                        <Skeleton className="h-44 w-44 rounded-full" />
+                                    </CardContent>
+                                </Card>
+                            }
+                        >
+                            <RadialChart data={radialChartData.emissions} />
+                        </Suspense>
                     )}
                 </div>
                 <div className="col-span-1 items-center justify-center w-full h-full">
@@ -196,7 +248,17 @@ export default function ProjectDashboardBase({
                             </CardContent>
                         </Card>
                     ) : (
-                        <RadialChart data={radialChartData.duration} />
+                        <Suspense
+                            fallback={
+                                <Card className="flex flex-col h-full items-center justify-center">
+                                    <CardContent className="p-0">
+                                        <Skeleton className="h-44 w-44 rounded-full" />
+                                    </CardContent>
+                                </Card>
+                            }
+                        >
+                            <RadialChart data={radialChartData.duration} />
+                        </Suspense>
                     )}
                 </div>
             </div>
@@ -223,51 +285,74 @@ export default function ProjectDashboardBase({
                                 projectId={project.id}
                                 isOpen={isExperimentModalOpen}
                                 onClose={() => setIsExperimentModalOpen(false)}
-                                onExperimentCreated={refreshExperimentList}
+                                onExperimentCreated={onExperimentCreated}
                             />
                         </div>
                     )}
                 </div>
                 {projectExperiments.length !== 0 && (
-                    <Card className="flex flex-col md:flex-row justify-between md:items-center gap-4 py-4 px-4 w-full max-w-3/4">
-                        <Table>
-                            <TableHeader>
-                                <tr>
-                                    <th className="text-left">Experiment</th>
-                                    <th className="text-left">Description</th>
-                                    {!isPublicView && (
-                                        <th className="text-left">
-                                            Experiment id
-                                        </th>
-                                    )}
-                                </tr>
-                            </TableHeader>
-                            <TableBody>
+                    <div className="flex flex-col gap-3 w-full md:w-2/3">
+                        <Select
+                            value={selectedExperimentId || ALL_EXPERIMENTS}
+                            onValueChange={handleSelectExperiment}
+                        >
+                            <SelectTrigger
+                                data-testid="experiment-select"
+                                aria-label="Select an experiment"
+                            >
+                                <SelectValue placeholder="Select an experiment" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value={ALL_EXPERIMENTS}>
+                                    All experiments
+                                </SelectItem>
                                 {projectExperiments.map((experiment) => (
-                                    <tr
+                                    <SelectItem
                                         key={experiment.id}
-                                        className={`cursor-pointer hover:bg-muted/50 ${
-                                            experiment.id ===
-                                            selectedExperimentId
-                                                ? "bg-primary/10"
-                                                : ""
-                                        }`}
-                                        onClick={() =>
-                                            onExperimentClick(
-                                                experiment.id || "",
-                                            )
-                                        }
+                                        value={experiment.id}
+                                        data-testid={`experiment-option-${experiment.id}`}
                                     >
-                                        <td>{experiment.name}</td>
-                                        <td>{experiment.description}</td>
-                                        {!isPublicView && (
-                                            <td>{experiment.id}</td>
-                                        )}
-                                    </tr>
+                                        {experiment.name}
+                                    </SelectItem>
                                 ))}
-                            </TableBody>
-                        </Table>
-                    </Card>
+                            </SelectContent>
+                        </Select>
+                        {selectedExperiment && (
+                            <Card
+                                className="p-4 flex flex-col gap-2"
+                                data-testid="experiment-details"
+                            >
+                                {selectedExperiment.description && (
+                                    <p className="text-sm text-muted-foreground">
+                                        {selectedExperiment.description}
+                                    </p>
+                                )}
+                                {!isPublicView && (
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs font-medium text-muted-foreground">
+                                            Experiment id
+                                        </span>
+                                        <code className="text-xs bg-muted px-2 py-1 rounded font-mono break-all">
+                                            {selectedExperiment.id}
+                                        </code>
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-7 w-7"
+                                            aria-label="Copy experiment id"
+                                            onClick={() =>
+                                                handleCopyExperimentId(
+                                                    selectedExperiment.id,
+                                                )
+                                            }
+                                        >
+                                            <Copy className="h-4 w-4" />
+                                        </Button>
+                                    </div>
+                                )}
+                            </Card>
+                        )}
+                    </div>
                 )}
             </Card>
             <div className="grid gap-8 md:grid-cols-2">
@@ -278,23 +363,27 @@ export default function ProjectDashboardBase({
                     </>
                 ) : (
                     <>
-                        <ExperimentsBarChart
-                            isPublicView={isPublicView}
-                            experimentsReportData={experimentsReportData}
-                            onExperimentClick={onExperimentClick}
-                            projectName={project.name}
-                            selectedExperimentId={selectedExperimentId}
-                        />
-                        <RunsScatterChart
-                            isPublicView={isPublicView}
-                            params={{
-                                ...runData,
-                                experimentId: selectedExperimentId,
-                            }}
-                            onRunClick={onRunClick}
-                            projectName={project.name}
-                            experimentName={experimentName}
-                        />
+                        <Suspense fallback={<ChartSkeleton height={300} />}>
+                            <ExperimentsBarChart
+                                isPublicView={isPublicView}
+                                experimentsReportData={experimentsReportData}
+                                onExperimentClick={onExperimentClick}
+                                projectName={project.name}
+                                selectedExperimentId={selectedExperimentId}
+                            />
+                        </Suspense>
+                        <Suspense fallback={<ChartSkeleton height={300} />}>
+                            <RunsScatterChart
+                                isPublicView={isPublicView}
+                                params={{
+                                    ...runData,
+                                    experimentId: selectedExperimentId,
+                                }}
+                                onRunClick={onRunClick}
+                                projectName={project.name}
+                                experimentName={experimentName}
+                            />
+                        </Suspense>
                     </>
                 )}
             </div>
@@ -305,12 +394,14 @@ export default function ProjectDashboardBase({
                         {isLoading ? (
                             <ChartSkeleton height={350} />
                         ) : (
-                            <EmissionsTimeSeriesChart
-                                isPublicView={isPublicView}
-                                runId={selectedRunId}
-                                projectName={project.name}
-                                experimentName={experimentName}
-                            />
+                            <Suspense fallback={<ChartSkeleton height={350} />}>
+                                <EmissionsTimeSeriesChart
+                                    isPublicView={isPublicView}
+                                    runId={selectedRunId}
+                                    projectName={project.name}
+                                    experimentName={experimentName}
+                                />
+                            </Suspense>
                         )}
                     </div>
                 </>
