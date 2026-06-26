@@ -211,6 +211,7 @@ class BaseEmissionsTracker(ABC):
         save_to_logger,
         save_to_prometheus,
         save_to_logfire,
+        save_to_wandb,
     ) -> None:
         save_to_flags = {
             "save_to_file": save_to_file,
@@ -218,6 +219,7 @@ class BaseEmissionsTracker(ABC):
             "save_to_logger": save_to_logger,
             "save_to_prometheus": save_to_prometheus,
             "save_to_logfire": save_to_logfire,
+            "save_to_wandb": save_to_wandb,
         }
         if any(value is not _sentinel for value in save_to_flags.values()):
             warnings.warn(
@@ -241,11 +243,13 @@ class BaseEmissionsTracker(ABC):
             self._save_to_logger = OutputMethod.LOGGER in self._output_methods
             self._save_to_prometheus = OutputMethod.PROMETHEUS in self._output_methods
             self._save_to_logfire = OutputMethod.LOGFIRE in self._output_methods
+            self._save_to_wandb = OutputMethod.WANDB in self._output_methods
             self._conf["save_to_file"] = self._save_to_file
             self._conf["save_to_api"] = self._save_to_api
             self._conf["save_to_logger"] = self._save_to_logger
             self._conf["save_to_prometheus"] = self._save_to_prometheus
             self._conf["save_to_logfire"] = self._save_to_logfire
+            self._conf["save_to_wandb"] = self._save_to_wandb
             return
 
         self._set_from_conf(save_to_api, "save_to_api", False, bool)
@@ -253,6 +257,7 @@ class BaseEmissionsTracker(ABC):
         self._set_from_conf(save_to_logger, "save_to_logger", False, bool)
         self._set_from_conf(save_to_prometheus, "save_to_prometheus", False, bool)
         self._set_from_conf(save_to_logfire, "save_to_logfire", False, bool)
+        self._set_from_conf(save_to_wandb, "save_to_wandb", False, bool)
 
         self._output_methods = []
         if self._save_to_file:
@@ -265,6 +270,8 @@ class BaseEmissionsTracker(ABC):
             self._output_methods.append(OutputMethod.PROMETHEUS)
         if self._save_to_logfire:
             self._output_methods.append(OutputMethod.LOGFIRE)
+        if self._save_to_wandb:
+            self._output_methods.append(OutputMethod.WANDB)
 
     def _initialize_runtime_state(self) -> None:
         self._start_time: Optional[float] = None
@@ -412,6 +419,8 @@ class BaseEmissionsTracker(ABC):
         output_dir: Optional[str] = _sentinel,
         output_file: Optional[str] = _sentinel,
         output_methods: Optional[List[OutputMethod]] = _sentinel,
+        wandb_kwargs: Optional[Dict] = _sentinel,
+        save_to_wandb: Optional[bool] = _sentinel,
         save_to_file: Optional[bool] = _sentinel,
         save_to_api: Optional[bool] = _sentinel,
         save_to_logger: Optional[bool] = _sentinel,
@@ -472,6 +481,7 @@ class BaseEmissionsTracker(ABC):
                                ``output_methods=csv,api``.
                                (HTTP output is enabled separately via
                                ``emissions_endpoint``.)
+        :param wandb_kwargs: Dictionary containing options to instantiate a WandbOutput object.
         :param save_to_file: [DEPRECATED] Use ``output_methods`` instead.
                              Indicates if the emission artifacts should be logged to a
                              file, defaults to True.
@@ -584,6 +594,7 @@ class BaseEmissionsTracker(ABC):
         self._set_from_conf(output_dir, "output_dir", ".")
         self._set_from_conf(output_file, "output_file", "emissions.csv")
         self._set_from_conf(project_name, "project_name", "codecarbon")
+        self._set_from_conf(wandb_kwargs, "wandb_kwargs")
         self._resolve_output_methods(
             output_methods,
             save_to_file,
@@ -591,6 +602,7 @@ class BaseEmissionsTracker(ABC):
             save_to_logger,
             save_to_prometheus,
             save_to_logfire,
+            save_to_wandb,
         )
 
         self._set_from_conf(logging_logger, "logging_logger")
@@ -639,6 +651,7 @@ class BaseEmissionsTracker(ABC):
         from codecarbon.output_methods.http import CodeCarbonAPIOutput, HTTPOutput
         from codecarbon.output_methods.metrics.logfire import LogfireOutput
         from codecarbon.output_methods.metrics.prometheus import PrometheusOutput
+        from codecarbon.output_methods.wandb import WandbOutput
 
         methods = set(self._output_methods) if self._output_methods else set()
 
@@ -686,6 +699,9 @@ class BaseEmissionsTracker(ABC):
 
         if OutputMethod.BOAMPS in methods:
             self._output_handlers.append(BoAmpsOutput(output_dir=self._output_dir))
+            
+        if OutputMethod.WANDB in methods:
+            self._output_handlers.append(WandbOutput(prefix="codecarbon", **self._wandb_kwargs))
 
     def get_detected_hardware(self) -> Dict[str, Any]:
         """

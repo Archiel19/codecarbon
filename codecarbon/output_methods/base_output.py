@@ -15,7 +15,7 @@ class OutputMethod(str, Enum):
         )
 
     Available values: ``CSV``, ``API``, ``LOGGER``, ``PROMETHEUS``,
-    ``LOGFIRE``, ``BOAMPS``.
+    ``LOGFIRE``, ``BOAMPS``, ``WANDB``.
 
     .. note::
         HTTP output is not configured here; it is enabled by setting the
@@ -28,6 +28,7 @@ class OutputMethod(str, Enum):
     PROMETHEUS = "prometheus"
     LOGFIRE = "logfire"
     BOAMPS = "boamps"
+    WANDB = "wandb"
 
 
 class BaseOutput:
