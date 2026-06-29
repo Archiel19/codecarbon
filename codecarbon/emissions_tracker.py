@@ -294,17 +294,18 @@ class BaseEmissionsTracker(ABC):
         self._gpu_power_sum: float = 0.0  # Only used for AppleSilicon GPU
         self._ram_power_sum: float = 0.0
         self._power_measurement_count: int = 0
-        gpu_count = len(self._gpu_ids)
-        self._per_gpu_energy: List[Energy] = [Energy.from_energy(kWh=0)] * gpu_count
-        self._per_gpu_power: List[Power] = [Power.from_watts(watts=0)] * gpu_count
-        self._per_gpu_power_sum: List[float] = [0.0] * gpu_count
-        self._gpu_details_history: Dict[List[List]] = {
-            "gpu_utilization": [[] for _ in range(gpu_count)],
-            "fan_percent": [[] for _ in range(gpu_count)],
-            "temperature": [[] for _ in range(gpu_count)],
-            "power_limit": [[] for _ in range(gpu_count)],
-            "used_memory": [[] for _ in range(gpu_count)],
-        }
+
+        self._per_gpu_energy: Dict[Union[int, str], Energy] = {}
+        self._per_gpu_power: Dict[Union[int, str], Power] = {}
+        self._per_gpu_power_sum: Dict[Union[int, str], float] = {}
+        self._gpu_details_history: Dict[Dict[Union[int, str], List]] = {
+            "gpu_utilization": {},
+            "fan_percent": {},
+            "temperature": {},
+            "power_limit": {},
+            "used_memory": {},
+        }            
+            
         self._measure_log_occurrence: int = 0
         self._measure_api_occurrence: int = 0
         self._cloud = None
@@ -323,6 +324,13 @@ class BaseEmissionsTracker(ABC):
             return
         self._populate_system_metadata()
         self._initialize_hardware_tracking()
+        # Initialize per-GPU metrics
+        for id in self._gpu_ids:
+            for key in self._gpu_details_history.keys():
+                self._gpu_details_history[key][id] = []
+            self._per_gpu_energy[id] = Energy.from_energy(kWh=0)
+            self._per_gpu_power[id] = Power.from_watts(watts=0)
+            self._per_gpu_power_sum[id] = 0.
         self._hardware_initialized = True
         self._log_tracker_metadata()
 
@@ -753,7 +761,7 @@ class BaseEmissionsTracker(ABC):
         self._ram_utilization_history.clear()
         self._ram_used_history.clear()
         for detail in self._gpu_details_history.values():
-            for gpu_id in range(self._conf.get('gpu_count')):
+            for gpu_id in self._gpu_ids:
                 detail[gpu_id].clear()
 
         # Read initial energy for hardware
@@ -809,7 +817,7 @@ class BaseEmissionsTracker(ABC):
         self._ram_utilization_history.clear()
         self._ram_used_history.clear()
         for detail in self._gpu_details_history.values():
-            for gpu_id in range(self._conf.get('gpu_count')):
+            for gpu_id in self._gpu_ids:
                 detail[gpu_id].clear()
 
         # Read initial energy for hardware
@@ -1075,8 +1083,8 @@ class BaseEmissionsTracker(ABC):
         else:
             cpu_power = self._cpu_power.W
             ram_power = self._ram_power.W
-            gpu_power = sum(self._per_gpu_power, start=Power.from_watts(watts=0)).W
-            per_gpu_power = [p.W for p in self._per_gpu_power]
+            gpu_power = sum(self._per_gpu_power.values(), start=Power.from_watts(watts=0)).W
+            per_gpu_power = [p.W for p in self._per_gpu_power.values()]
         
         def list_last(lst):
             return lst[-1] if lst else 0.0
@@ -1090,13 +1098,13 @@ class BaseEmissionsTracker(ABC):
             cpu_utilization_percent = agg_func(self._cpu_utilization_history)
             ram_utilization_percent = agg_func(self._ram_utilization_history)
             ram_used_gb = agg_func(self._ram_used_history)
-            per_gpu_utilization_percent = [agg_func(lst) for lst in self._gpu_details_history["gpu_utilization"]] 
-            per_gpu_temperature = [agg_func(lst) for lst in self._gpu_details_history["temperature"]]
-            per_gpu_fan_percent = [agg_func(lst) for lst in self._gpu_details_history["fan_percent"]]
-            per_gpu_power_limit = [agg_func(lst) for lst in self._gpu_details_history["power_limit"]]
-            per_gpu_vram_used_gb = [agg_func(lst) for lst in self._gpu_details_history["used_memory"]]
+            per_gpu_utilization_percent = [agg_func(lst) for lst in self._gpu_details_history["gpu_utilization"].values()] 
+            per_gpu_temperature = [agg_func(lst) for lst in self._gpu_details_history["temperature"].values()]
+            per_gpu_fan_percent = [agg_func(lst) for lst in self._gpu_details_history["fan_percent"].values()]
+            per_gpu_power_limit = [agg_func(lst) for lst in self._gpu_details_history["power_limit"].values()]
+            per_gpu_vram_used_gb = [agg_func(lst) for lst in self._gpu_details_history["used_memory"].values()]
 
-        per_gpu_energy = [e.kWh for e in self._per_gpu_energy]
+        per_gpu_energy = [e.kWh for e in self._per_gpu_energy.values()]
         
         total_emissions = EmissionsData(
             timestamp=datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%f"),
@@ -1197,12 +1205,12 @@ class BaseEmissionsTracker(ABC):
                 elif isinstance(hardware, GPU):
                     gpu_ids_to_monitor = hardware.gpu_ids
                     gpu_details = hardware.devices.get_gpu_details()
-                    for gpu_index, gpu_detail in enumerate(gpu_details):
-                        resolved_gpu_index = gpu_detail.get("gpu_index", gpu_index)
-                        if resolved_gpu_index in gpu_ids_to_monitor:
+                    for gpu_detail in gpu_details:
+                        if gpu_detail["gpu_index"] in gpu_ids_to_monitor:
+                            gpu_i = str(gpu_detail["gpu_index"])
                             for key in ("gpu_utilization", "temperature", "fan_percent", "power_limit"):
-                                self._gpu_details_history[key][gpu_index].append(gpu_detail[key])
-                            self._gpu_details_history["used_memory"][gpu_index].append(gpu_detail["used_memory"] / GB_TO_B)
+                                self._gpu_details_history[key][gpu_i].append(gpu_detail[key])
+                            self._gpu_details_history["used_memory"][gpu_i].append(gpu_detail["used_memory"] / GB_TO_B)
 
     def _do_measurements(self) -> None:
         for hardware in self._hardware:
@@ -1216,7 +1224,7 @@ class BaseEmissionsTracker(ABC):
             # Apply the PUE of the datacenter to the consumed energy
             if isinstance(hardware, GPU):
                 per_gpu_energy = energy
-                energy = sum(energy, start=Energy.from_energy(kWh=0))
+                energy = sum(energy.values(), start=Energy.from_energy(kWh=0))
             energy *= self._pue
             water = Water.from_litres(litres=self._wue * energy.kWh)
             self._total_energy += energy
@@ -1234,8 +1242,7 @@ class BaseEmissionsTracker(ABC):
                     f"Energy consumed for All CPU : {self._total_cpu_energy.kWh:.6f} kWh"
                 )
             elif isinstance(hardware, GPU):
-                gpu_count = self._conf.get('gpu_count')
-                for gpu_i in range(gpu_count):
+                for gpu_i in self._gpu_ids:
                     self._per_gpu_energy[gpu_i] += per_gpu_energy[gpu_i] * self._pue
                     self._per_gpu_power[gpu_i] = power[gpu_i]
                     self._per_gpu_power_sum[gpu_i] += power[gpu_i].W

@@ -83,14 +83,15 @@ class GPU(BaseHardware):
             Time.from_seconds(last_duration)
         )
         # We get the total energy and power of only the ones in gpu_ids
-        per_gpu_energy, per_gpu_power = [], []
+        per_gpu_energy, per_gpu_power = {}, {}
         for gpu_details in all_gpu_details:
             if gpu_details["gpu_index"] in gpu_ids:
-                per_gpu_energy.append(Energy.from_energy(gpu_details["delta_energy_consumption"].kWh))
-                per_gpu_power.append(Power(gpu_details["power_usage"].kW))
+                gpu_i = str(gpu_details["gpu_index"])
+                per_gpu_energy[gpu_i] = Energy.from_energy(gpu_details["delta_energy_consumption"].kWh)
+                per_gpu_power[gpu_i] = Power(gpu_details["power_usage"].kW)
         
-        self._total_power = sum(per_gpu_power, start=Power(kW=0))
-        self._total_energy = sum(per_gpu_energy, start=Energy(kWh=0))
+        self._total_power = sum(per_gpu_power.values(), start=Power(kW=0))
+        self._total_energy = sum(per_gpu_energy.values(), start=Energy(kWh=0))
         return per_gpu_power, per_gpu_energy
 
     def extra_data(self, gpu_ids: Iterable[int] = None) -> Dict:
@@ -107,8 +108,9 @@ class GPU(BaseHardware):
         for gpu_details in all_gpu_details:
             if gpu_details["gpu_index"] not in gpu_ids:
                 continue
+            gpu_i = str(gpu_details["gpu_index"])
             for key in extra_data:
-                extra_data[key].append(gpu_details[key])
+                extra_data[key][gpu_i].append(gpu_details[key])
         return extra_data
 
     def _get_gpu_ids(self) -> Iterable[int]:
