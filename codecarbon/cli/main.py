@@ -501,7 +501,7 @@ def monitor_log(
         print("\nReceived signal to stop. Saving emissions data...")
         tracker.stop()
         import wandb
-        if wandb.run():
+        if wandb.run:
             wandb.finish()
         sys.exit(0)
 
