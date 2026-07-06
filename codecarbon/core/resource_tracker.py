@@ -222,10 +222,9 @@ class ResourceTracker:
 
     def set_GPU_tracking(self):
         logger.info("[setup] GPU Tracking...")
+        
+        # self.tracker._gpu_ids might be None if no ids were passed in __init__
         self.tracker._gpu_ids = normalize_gpu_ids(self.tracker._gpu_ids)
-        self.tracker._conf["gpu_ids"] = self.tracker._gpu_ids
-        if self.tracker._gpu_ids is not None:
-            self.tracker._conf["gpu_count"] = len(self.tracker._gpu_ids)
 
         is_nvidia = gpu.is_nvidia_system()
         is_rocm = gpu.is_rocm_system()
@@ -236,10 +235,15 @@ class ResourceTracker:
             else:
                 logger.info("Tracking AMD GPUs via AMDSMI")
                 self.gpu_tracker = "amdsmi"
+            
+            # Initialize devices and related config
             gpu_devices = GPU.from_utils(self.tracker._gpu_ids)
             self.tracker._hardware.append(gpu_devices)
-            gpu_names = []
-            gpu_vrams = []
+            self.tracker._conf["gpu_ids"] = gpu_devices.gpu_ids
+            self.tracker._conf["gpu_count"] = gpu_devices.num_gpus
+            
+            # Add some extra data to GPU device descriptions
+            gpu_names, gpu_vrams = [], []
             for n in gpu_devices.devices.get_gpu_static_info():
                 gpu_names.append(n["name"])
                 gpu_vrams.append(n["total_memory"] / GB_TO_B)
@@ -247,10 +251,6 @@ class ResourceTracker:
             self.tracker._conf["gpu_model"] = ", ".join(
                 [f"{i} x {name}" for name, i in gpu_names_dict.items()]
             )
-            if not self.tracker._conf.get("gpu_count"):
-                self.tracker._conf["gpu_count"] = len(
-                    gpu_devices.devices.get_gpu_static_info()
-                )
             self.tracker._conf["gpu_vram"] = ", ".join(
                 [f"GPU-{i}: {mem:.3f} GB" for i, mem in enumerate(gpu_vrams)]
             )

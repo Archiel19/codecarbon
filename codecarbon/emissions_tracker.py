@@ -325,7 +325,7 @@ class BaseEmissionsTracker(ABC):
         self._populate_system_metadata()
         self._initialize_hardware_tracking()
         # Initialize per-GPU metrics
-        for id in self._gpu_ids:
+        for id in self._conf['gpu_ids']:
             for key in self._gpu_details_history.keys():
                 self._gpu_details_history[key][id] = []
             self._per_gpu_energy[id] = Energy.from_energy(kWh=0)
@@ -360,7 +360,7 @@ class BaseEmissionsTracker(ABC):
         )
         logger.info(f"  CPU model: {hardware_info['cpu_model']}")
         logger.info(f"  GPU count: {hardware_info['gpu_count']}")
-        if self._gpu_ids:
+        if self._conf['gpu_ids']:
             logger.info(
                 f"  GPU model: {hardware_info['gpu_model']} BUT only tracking these GPU ids : {hardware_info['gpu_ids']}"
             )
@@ -761,7 +761,7 @@ class BaseEmissionsTracker(ABC):
         self._ram_utilization_history.clear()
         self._ram_used_history.clear()
         for detail in self._gpu_details_history.values():
-            for gpu_id in self._gpu_ids:
+            for gpu_id in self._conf['gpu_ids']:
                 detail[gpu_id].clear()
 
         # Read initial energy for hardware
@@ -817,7 +817,7 @@ class BaseEmissionsTracker(ABC):
         self._ram_utilization_history.clear()
         self._ram_used_history.clear()
         for detail in self._gpu_details_history.values():
-            for gpu_id in self._gpu_ids:
+            for gpu_id in self._conf['gpu_ids']:
                 detail[gpu_id].clear()
 
         # Read initial energy for hardware
@@ -1242,7 +1242,7 @@ class BaseEmissionsTracker(ABC):
                     f"Energy consumed for All CPU : {self._total_cpu_energy.kWh:.6f} kWh"
                 )
             elif isinstance(hardware, GPU):
-                for gpu_i in self._gpu_ids:
+                for gpu_i in self._conf['gpu_ids']:
                     self._per_gpu_energy[gpu_i] += per_gpu_energy[gpu_i] * self._pue
                     self._per_gpu_power[gpu_i] = power[gpu_i]
                     self._per_gpu_power_sum[gpu_i] += power[gpu_i].W
