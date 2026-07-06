@@ -1203,11 +1203,9 @@ class BaseEmissionsTracker(ABC):
                     self._ram_utilization_history.append(extra_data['percent'])
                     self._ram_used_history.append(extra_data['used'])
                 elif isinstance(hardware, GPU):
-                    gpu_ids_to_monitor = hardware.gpu_ids
-                    gpu_details = hardware.devices.get_gpu_details()
-                    for gpu_detail in gpu_details:
-                        if gpu_detail["gpu_index"] in gpu_ids_to_monitor:
-                            gpu_i = str(gpu_detail["gpu_index"])
+                    for gpu_detail in hardware.devices.get_gpu_details():
+                        gpu_i = gpu_detail["gpu_index"]
+                        if gpu_i in self._conf['gpu_ids']:
                             for key in ("gpu_utilization", "temperature", "fan_percent", "power_limit"):
                                 self._gpu_details_history[key][gpu_i].append(gpu_detail[key])
                             self._gpu_details_history["used_memory"][gpu_i].append(gpu_detail["used_memory"] / GB_TO_B)
