@@ -85,8 +85,8 @@ class GPU(BaseHardware):
         # We get the total energy and power of only the ones in gpu_ids
         per_gpu_energy, per_gpu_power = {}, {}
         for gpu_details in all_gpu_details:
-            if gpu_details["gpu_index"] in gpu_ids:
-                gpu_i = str(gpu_details["gpu_index"])
+            gpu_i = gpu_details["gpu_index"]
+            if gpu_i in gpu_ids:
                 per_gpu_energy[gpu_i] = Energy.from_energy(gpu_details["delta_energy_consumption"].kWh)
                 per_gpu_power[gpu_i] = Power(gpu_details["power_usage"].kW)
         
