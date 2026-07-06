@@ -120,3 +120,8 @@ class WandbOutput(BaseOutput):
 
     def live_out(self, total: EmissionsData, delta: EmissionsData):
         self.out(total, None)
+
+
+    def exit():
+        if wandb.run:
+            wandb.finish()
