@@ -27,6 +27,7 @@ from codecarbon.core.api_client import ApiClient, get_datetime_with_timezone
 from codecarbon.core.schemas import ExperimentCreate, OrganizationCreate, ProjectCreate
 from codecarbon.emissions_tracker import EmissionsTracker, OfflineEmissionsTracker
 from codecarbon.output import LoggerOutput
+from codecarbon.output_methods.base_output import OutputMethod
 
 API_URL = os.environ.get("API_URL", "https://dashboard.codecarbon.io/api")
 
@@ -444,6 +445,8 @@ def monitor_log(
     ] = None,
 ):
     """Monitor your machine's carbon emissions."""
+    
+    # Define logger
     cc_logger = logging.getLogger('codecarbon')
     format = "[%(name)s %(levelname)s @ %(asctime)s] %(message)s"
     formatter = logging.Formatter(format, datefmt="%Y-%m-%dT%H:%M:%S")
@@ -451,6 +454,15 @@ def monitor_log(
     handler.setFormatter(formatter)
     cc_logger.addHandler(handler)
     cc_logger.setLevel(logging.INFO)
+    
+    # Configure wandb
+    wandb_kwargs = {
+        "name": experiment_name,
+        "save_dir": output_dir,
+        "offline": offline,
+        "project": project_name
+    }
+    
     common_args = dict(
             gpu_ids=gpu_ids,
             project_name=project_name,
@@ -463,8 +475,9 @@ def monitor_log(
             log_level="info",
             api_call_interval=-1,
             log_interval=log_interval,
-            save_to_logger=True,
+            output_methods=[OutputMethod.LOGGER, OutputMethod.WANDB],
             logging_logger=LoggerOutput(cc_logger, logging.INFO),
+            wandb_kwargs=wandb_kwargs
     )
     if offline:
         if not country_iso_code:

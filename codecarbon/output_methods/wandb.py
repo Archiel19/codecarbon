@@ -81,26 +81,6 @@ class WandbOutput(BaseOutput):
         self._name = self._wandb_init.get("name")
         self._id = self._wandb_init.get("id")
 
-    def __getstate__(self) -> dict[str, Any]:
-
-        # Hack: If the 'spawn' launch method is used, the logger will get pickled and this `__getstate__` gets called.
-        # We create an experiment here in the main process, and attach to it in the worker process.
-        # Using wandb-service, we persist the same experiment even if multiple `Trainer.fit/test/validate` calls
-        # are made.
-        wandb.require("service")
-        _ = self.experiment
-
-        state = self.__dict__.copy()
-        # args needed to reload correct experiment
-        if self._experiment is not None:
-            state["_id"] = getattr(self._experiment, "id", None)
-            state["_attach_id"] = getattr(self._experiment, "_attach_id", None)
-            state["_name"] = self._experiment.name
-
-        # cannot be pickled
-        state["_experiment"] = None
-        return state
-
     @property
     def experiment(self) -> Union["Run", "RunDisabled"]:
 

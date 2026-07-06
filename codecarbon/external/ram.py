@@ -368,7 +368,6 @@ class RAM(BaseHardware):
                 used, percent = self.process_memory_GB
             else:
                 used, percent = self._used_ram, self._mem_percent
-            self._used_ram, self._mem_percent = None, None
         else:
             raise Exception(f"Unknown tracking_mode {self._tracking_mode}")
         return {"used": used, "percent": percent}
