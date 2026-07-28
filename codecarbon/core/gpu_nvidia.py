@@ -2,7 +2,7 @@ import subprocess
 from dataclasses import dataclass
 from typing import Any, Union
 
-from codecarbon.core.gpu_device import GPUDevice
+from codecarbon.core.gpu_device import GPUDevice, EnergyNotSupportedException
 from codecarbon.external.logger import logger
 
 
@@ -47,10 +47,12 @@ class NvidiaGPUDevice(GPUDevice):
         """
         try:
             return pynvml.nvmlDeviceGetTotalEnergyConsumption(self.handle)
+        except pynvml.NVMLError_NotSupported:
+            raise EnergyNotSupportedException()
         except pynvml.NVMLError:
-            # logger.warning(
-            #     "Failed to retrieve gpu total energy consumption", exc_info=True
-            # )
+            logger.warning(
+                "Failed to retrieve gpu total energy consumption", exc_info=True
+            )
             return None
 
     def _get_gpu_name(self) -> Any:

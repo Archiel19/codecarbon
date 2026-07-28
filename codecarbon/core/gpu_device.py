@@ -3,6 +3,8 @@ from typing import Any, Dict
 
 from codecarbon.core.units import Energy, Power, Time
 
+class EnergyNotSupportedException(Exception):
+    pass
 
 @dataclass
 class GPUDevice:
@@ -32,42 +34,46 @@ class GPUDevice:
     last_energy: Energy = field(default_factory=lambda: Energy(0))
 
     def start(self) -> None:
-        self.last_energy = self._get_energy_kwh()
-        self.power = Power.from_milli_watts(self._get_power_usage())
+        try:
+            self.last_energy = self._get_energy_kwh()
+        except EnergyNotSupportedException:
+            pass
+        self.power = Power.from_watts(self._get_power_usage())
 
     def __post_init__(self) -> None:
-        self.last_energy = self._get_energy_kwh()
-        self.power = Power.from_milli_watts(self._get_power_usage())
+        try:
+            self.last_energy = self._get_energy_kwh()
+        except EnergyNotSupportedException:
+            pass
+        self.power = Power.from_watts(self._get_power_usage())
         self._init_static_details()
 
     def _get_energy_kwh(self) -> Energy:
         total_energy_consumption = self._get_total_energy_consumption()
         if total_energy_consumption is None:
-            return self.last_energy  # Hack to detect if the reading failed
+            return self.last_energy
         return Energy.from_millijoules(total_energy_consumption)
+
 
     def delta(self, duration: Time) -> dict:
         """
         Compute the energy/power used since last call.
         """
-        new_last_energy = energy = self._get_energy_kwh()
-        if new_last_energy == self.last_energy:
-            # Error while reading energy: old GPU or actual error
-            new_power = self.power.from_milli_watts(self._get_power_usage())
+        
+        # If GPU does not support energy consumption readings, compute from power instead
+        try:
+            new_last_energy = energy = self._get_energy_kwh()
+            self.power = self.power.from_energies_and_delay(
+                energy, self.last_energy, duration
+            )
+        except EnergyNotSupportedException:
+            self.power = self.power.from_watts(self._get_power_usage())
             new_last_energy = energy = Energy.from_power_and_time(
                 power=self.power, time=duration
             )
-        else:
-            new_power = self.power.from_energies_and_delay(
-                energy, self.last_energy, duration
-            )
-        
-        # If the updated values do not make sense, it really was an error
-        if self.last_energy.kWh < energy.kWh and abs(self.power.W - new_power.W) < 1e4:
-            self.power = new_power
-            self.energy_delta = energy - self.last_energy
-            self.last_energy = new_last_energy
 
+        self.energy_delta = energy - self.last_energy
+        self.last_energy = new_last_energy
         return {
             "name": self._gpu_name,
             "uuid": self._uuid,
@@ -94,6 +100,10 @@ class GPUDevice:
     def get_gpu_details(self) -> Dict[str, Any]:
         # Memory
         memory = self._get_memory_info()
+        try:
+            total_energy_consumption = self._get_total_energy_consumption()
+        except EnergyNotSupportedException:
+            total_energy_consumption = None
 
         device_details = {
             "name": self._gpu_name,
@@ -106,7 +116,7 @@ class GPUDevice:
             "fan_percent": self._get_fan_percent(),
             "power_usage": self._get_power_usage(),
             "power_limit": self._get_power_limit(),
-            "total_energy_consumption": self._get_total_energy_consumption(),
+            "total_energy_consumption": total_energy_consumption,
             "gpu_utilization": self._get_gpu_utilization(),
             "compute_mode": self._get_compute_mode(),
             "compute_processes": self._get_compute_processes(),
